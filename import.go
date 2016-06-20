@@ -13,11 +13,11 @@ import (
 
 type LinkedinData struct {
 	Id           bson.ObjectId `json:"id" bson:"_id,omitempty"`
-	MemberID     int
-	Email        string
-	PasswordHash string
-	Password     string
-	Breach       string
+	MemberID     int           `bson:"memberid"`
+	Email        string        `bson:"email"`
+	PasswordHash string        `bson:"passwordhash"`
+	Password     string        `bson:"password"`
+	Breach       string        `bson:"breach"`
 }
 
 func main() {
@@ -57,6 +57,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	threads := 15
+	threader := make(chan string, threads * 20) // buffered to 20 * thread size
+	doner := make(chan bool, threads)
+
+	for i := 0; i < threads; i++ {
+		go importLine(threader, mdb, doner)
+	}
+
 	for _, f := range matches {
 		fmt.Printf("Parsing file %v...\r\n", f)
 
@@ -72,8 +80,8 @@ func main() {
 		// TODO: Threaded!
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
-			// For each line of the file
-			importLine(scanner.Text(), *c)
+			// For each line of the file write to the channel
+			threader <- scanner.Text()
 		}
 
 		if err := scanner.Err(); err != nil {
@@ -81,9 +89,26 @@ func main() {
 			continue
 		}
 	}
+	// close the threader channel
+	close(threader)
+
+	// wait until all threads signal done
+	for i := 0; i < threads; i++ {
+		<-doner
+		fmt.Println("Thread signaled done!")
+	}
 }
 
 func importSQLLine(text string, c mgo.Collection) {
+	// Check that these will be valid
+	if (strings.Index(text, "'") + 1) <= (strings.Index(text, ",") - 1) {
+		// invalid row
+		return
+	}
+	if (strings.Index(text, ",") + 3) <= (strings.LastIndex(text, "'")) {
+		// invalid row
+		return
+	}
 	memberidstr := text[strings.Index(text, "'") + 1:strings.Index(text, ",") - 1]
 	memberid, err := strconv.Atoi(memberidstr)
 	if err != nil {
@@ -101,65 +126,59 @@ func importSQLLine(text string, c mgo.Collection) {
 	c.Insert(entry)
 }
 
-func importLine(text string, c mgo.Collection) {
-	// TODO: This check for whether email:hash or id:hash is technically not erequired every time
-	// but the coding time to make ito nly happen once is bigger hit than the import delay time for checking lots
+func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
+	// create our mongodb copy
+	mgo := mgoreal.Copy()
 
-	// Split the line into x:y
-	data := strings.Split(text, ":")
+	c := mgo.DB("steamer").C("dumps")
+	for text := range threader {
+		// Split the line into x:y
+		data := strings.Split(text, ":")
 
-	// remove bogus data
-	if data[0] == "null" {
-		return
-	}
-
-	results := []LinkedinData{}
-	var err error
-
-	// check if it has an @ in it, and fetch record accordingly
-	if strings.Index(data[0], "@") == -1 {
-		// TODO: I think we can skip this and only import emails, lets do it
-		return
-		// ID or bogus
-		// Validate that it's an ID
-		i, err := strconv.Atoi(data[0])
-		if (err != nil) || (i < 1) {
-			// Not an email? not an ID? bogus!
-			return
+		// remove bogus data
+		if data[0] == "null" {
+			continue
 		}
-		// Find a relevant data
-		err = c.Find(bson.M{"Breach": "LinkedIn2016", "MemberID": data[0]}).All(&results)
-	} else {
+		if data[1] == "xxx" {
+			continue
+		}
+
+		results := []LinkedinData{}
+		var err error
+
+		// Ignore memberid:hash entries, only parse emails
+		if strings.Index(data[0], "@") == -1 {
+			continue
+		}
+
 		// email:hash format
-		err = c.Find(bson.M{"Breach": "LinkedIn2016", "Email": data[0]}).All(&results)
-	}
+		err = c.Find(bson.M{"breach": "LinkedIn2016", "email": data[0], "passwordhash": data[1]}).All(&results)
 
-	if err != nil {
-		fmt.Println("error finding with memberid: ", data[1], err)
-		return
-	}
-	if len(results) > 1 {
-		fmt.Println("Too many potential results, please fix me!")
-		return
-	}
-	if len(results) < 1 {
-		fmt.Println("Bogus result? No pre-existing found!")
-		return
-	}
-	// Check whether hash already exists, and if so, whether it matches
-	if results[0].PasswordHash != "" {
-		if results[0].PasswordHash != data[1] {
-			fmt.Println("Bogus result! Hash does not match stored hash")
-			return
-		} else {
-			// no update required
-			return
+		if err != nil {
+			fmt.Println("error finding with memberid: ", data[1], err)
+			continue
+		}
+
+		if len(results) > 1 {
+			fmt.Println("Too many potential results, please fix me!")
+			continue
+		}
+
+		// Only create a new result if this is a new password hash combination
+		if len(results) == 1 {
+			continue
+		}
+
+		entry := LinkedinData{
+			Email: data[0],
+			Breach: "LinkedIn2016",
+			PasswordHash: data[1],
+		}
+		err = c.Insert(entry)
+		if err != nil {
+			fmt.Println("error inserting into db", err)
+			continue
 		}
 	}
-	// Enter the hash into the database
-	update := bson.M{"$set": bson.M{"PasswordHash": data[1]}}
-	err = c.UpdateId(results[0].Id, update)
-	if err != nil {
-		fmt.Printf("Could not update record! ", err)
-	}
+	doner <- true
 }
