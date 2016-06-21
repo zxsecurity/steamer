@@ -7,10 +7,15 @@
 	<link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.6.0/pure-min.css">
 	<link rel="stylesheet" href="/css/styles.css">
 	<script src="https://code.jquery.com/jquery-3.0.0.min.js" integrity="sha256-JmvOoLtYsmqlsWxa7mDSLMwa6dZ9rrIdtrrVYRnDRH0=" crossorigin="anonymous"></script>
+	<style>
+		tbody td, thead th {
+			cursor: pointer;
+		}
+	</style>
 </head>
 <body>
 	<div class="pure-g">
-		<form class="pure-form pure-u-1-2" action="/search" method="get" style="margin: 0 auto; text-align: center;">
+		<form class="pure-form pure-u-1-1" action="/search" method="get" style="margin: 0 auto; text-align: center;">
 			<fieldset>
 				<legend>Freeform search all archived dumps</legend>
 				
@@ -19,9 +24,35 @@
 					<option value="all">All Dumps</option>
 					<option>Loading...</option>
 				</select>
-				<button type="submit" class="pure-button pure-button-primary">Search</button>
+				<input type="hidden" name="sort" value="any">
+				<button class="pure-button pure-button-primary search-button">Search</button>
+				<button class="pure-button pure-button-secondary json-button" type="submit">JSON</button>
 			</fieldset>
 		</form>
+
+		<div class="pure-u-1-1" id="results">
+			<table class="pure-table" style="margin: 0 auto;">
+				<thead>
+					<tr>
+					</tr>
+				</thead>
+				<tbody>
+				</tbody>
+			</table>
+		</div>
+
+		<div class="pure-u-1-1" class="information">
+			<p>Search the MongoDB dump database. Searches will include by default:
+			<ul>
+				<li>^search.* on email</li>
+				<li>.*search$ on email</li>
+				<li>exact match on password hash</li>
+				<li>exact match on breach (if specified)</li>
+			</ul>.</p>
+			<p>Click on an entry in the table to view 'related' entries. Internally this works by just doing a search with that value again.</p>
+			<p>Click "JSON" to get a JSON export of the same result set displayed to you.</p>
+			<p>Click a table header element to sort by that field. Keep in mind this can be significantly slower than a non-specific sort.</p>
+		</div>
 	</div>
 
 	<script type="text/javascript">
@@ -34,6 +65,64 @@
 				for (var i = 0; i < breaches.length; i++) {
 					$('select[name="breach"]').append('<option name="' + breaches[i] + '">' + breaches[i] + '</option>');
 				}
+			});
+
+			// Bind a search handler
+			$('.search-button').click(function() {
+				// Trigger an AJAX request to get the results
+				$.get("/search", {
+					search: $('input[name="search"]').val(),
+					breach: $('select[name="breach"] option:selected').val(),
+					sort:   $('input[name="sort"]').val(),
+					limit:  100,
+				}, function(data) {
+					// verify there were some results
+					if (data == "[]") {
+						alert("No results found");
+						return;
+					}
+					// parse into json
+					res = JSON.parse(data)
+					// build up the thead
+					$('#results th').remove();
+					for (var k in res[0]) {
+						if (k == 'id') continue;
+						$('#results thead').append('<th>' + k + '</th>');
+					}
+
+					// build up the tbody
+					$('#results tbody > tr').remove();
+					for (var i = 0; i < res.length; i++) {
+						$('#results tbody').append('<tr></tr>');
+						delete res[i].id;
+						$.each(res[i], function() {
+							$('#results tbody tr:last-child').append('<td>' + this + '</td>');
+						});
+					}
+				});
+				return false;
+			});
+
+			// Set up a live bind/handler for when users click on a td and wish to see 'related' results
+			// This can be improved once we have 'exact' search matches advanced search
+			$('tbody').on("click", "td", function() {
+				// Take the value of the td, put it into the input box, and do a search
+				$('input[name="search"]').val($(this).text());
+				$('.search-button').click();
+			});
+
+			$('thead').on("click", "th", function() {
+				// Add a sort, flip if one already exists
+				sort = $(this).text().toLowerCase()
+				curSort = $('input[name="sort"]')
+				if (sort == curSort.val()) {
+					// flip to reverse order
+					curSort.val('-' + sort);
+				} else {
+					curSort.val(sort);
+				}
+				// trigger a new search
+				$('.search-button').click();
 			});
 		});
 	</script>

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
 	"gopkg.in/mgo.v2"
@@ -8,8 +9,8 @@ import (
 	"html/template"
 	"net/http"
 	"os"
-	"encoding/json"
 	"regexp"
+	"strconv"
 )
 
 var mdb *mgo.Session
@@ -24,10 +25,10 @@ func main() {
 	}
 	defer mdb.Close()
 
-
 	r := mux.NewRouter()
 	r.HandleFunc("/", HomeHandler)
 	r.HandleFunc("/search", SearchHandler)
+	r.HandleFunc("/advancedsearch", AdvancedSearchHandler)
 	r.HandleFunc("/listbreaches", ListBreaches)
 
 	http.Handle("/", r)
@@ -51,6 +52,47 @@ type BreachEntry struct {
 	Breach       string        `bson:"breach"`
 }
 
+func AdvancedSearchHandler(w http.ResponseWriter, r *http.Request) {
+	search := r.URL.Query().Get("search")
+	if search == "" {
+		http.Error(w, "Error detecting search", http.StatusInternalServerError)
+		return
+	}
+
+	// Begin a search
+	mysess := mdb.Copy()
+	c := mysess.DB("steamer").C("dumps")
+
+	results := []BreachEntry{}
+
+	// Marshal the string to a BSON interface
+	var query interface{}
+	err := bson.Unmarshal([]byte(search), &query)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error marshaling BSON - %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Run the search with the query
+	err = c.Find(query).Limit(100).All(&results)
+
+	if err != nil {
+		fmt.Fprintf(w, "error searching %v", err)
+		return
+	}
+
+	json, err := json.Marshal(results)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "json encoding error: %v", err)
+		http.Error(w, "Error json encoding", http.StatusInternalServerError)
+		return
+	}
+
+	// replace with a bytes write rather than a string conversion
+	fmt.Fprintf(w, string(json))
+
+}
+
 func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	// Get the searched for string
 	searchterm := r.URL.Query().Get("search")
@@ -69,25 +111,53 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	c := mysess.DB("steamer").C("dumps")
 
 	results := []BreachEntry{}
-	var err error
 
+	var query *mgo.Query
 	// TODO Remove unnessecary duplicated code here
 	if breachfilter == "all" {
-		err = c.Find(bson.M{"$or": []interface{}{
+		query = c.Find(bson.M{"$or": []interface{}{
 			bson.M{"email": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), ""}},
 			bson.M{"passwordhash": searchterm},
 			bson.M{"liame": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), ""}},
-		}}).Limit(100).All(&results)
+		}})
 	} else {
-		err = c.Find(bson.M{"$and": []interface{} {
+		query = c.Find(bson.M{"$and": []interface{}{
 			bson.M{"breach": breachfilter},
 			bson.M{"$or": []interface{}{
 				bson.M{"email": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), ""}},
 				bson.M{"passwordhash": searchterm},
 				bson.M{"liame": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), ""}},
 			}},
-		}}).Limit(100).All(&results)
+		}})
 	}
+
+	// Sort if required
+	sort := r.URL.Query().Get("sort")
+	if sort == "" {
+		sort = "all"
+	}
+
+	if sort != "all" {
+		query = query.Sort(sort)
+	}
+
+	// Limit if required
+	slimit := r.URL.Query().Get("limit")
+	if slimit == "" {
+		slimit = "1000"
+	}
+	limit, err := strconv.Atoi(slimit)
+	if err != nil {
+		http.Error(w, "Error parsing limit", http.StatusInternalServerError)
+		return
+	}
+
+	// hard limit to prevent server dying (golang will probably barf on 10k as it is since it's not iterated properly)
+	if (limit > 10000) || (limit < 1) {
+		limit = 10000
+	}
+
+	err = query.Limit(limit).All(&results)
 
 	if err != nil {
 		fmt.Fprintf(w, "error searching %v", err)
