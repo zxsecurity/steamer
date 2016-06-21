@@ -6,10 +6,11 @@
 	<title>Search a dump! | Steamer</title>
 	<link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.6.0/pure-min.css">
 	<link rel="stylesheet" href="/css/styles.css">
+	<script src="https://code.jquery.com/jquery-3.0.0.min.js" integrity="sha256-JmvOoLtYsmqlsWxa7mDSLMwa6dZ9rrIdtrrVYRnDRH0=" crossorigin="anonymous"></script>
 </head>
 <body>
 	<div class="pure-g">
-		<form class="pure-form pure-u-1-2" action="/search" method="post" style="margin: 0 auto; text-align: center;">
+		<form class="pure-form pure-u-1-2" action="/search" method="get" style="margin: 0 auto; text-align: center;">
 			<fieldset>
 				<legend>Freeform search all archived dumps</legend>
 				
@@ -22,5 +23,19 @@
 			</fieldset>
 		</form>
 	</div>
+
+	<script type="text/javascript">
+		$(document).ready(function(){
+			// AJAX in the breach list
+			$.get("/listbreaches", function(data) {
+				// remove the loading item
+				$('select[name="breach"] > :last-child').remove();
+				breaches = JSON.parse(data);
+				for (var i = 0; i < breaches.length; i++) {
+					$('select[name="breach"]').append('<option name="' + breaches[i] + '">' + breaches[i] + '</option>');
+				}
+			});
+		});
+	</script>
 </body>
 </html>
