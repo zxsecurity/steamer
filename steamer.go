@@ -50,6 +50,7 @@ type BreachEntry struct {
 	PasswordHash string        `bson:"passwordhash"`
 	Password     string        `bson:"password"`
 	Breach       string        `bson:"breach"`
+	Hint         string        `bson:"hint"`
 }
 
 func AdvancedSearchHandler(w http.ResponseWriter, r *http.Request) {

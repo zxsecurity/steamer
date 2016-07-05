@@ -11,14 +11,14 @@ import (
 	"time"
 )
 
-type AdobeData struct {
+type StratforData struct {
 	Id           bson.ObjectId `json:"id" bson:"_id,omitempty"`
 	MemberID     int           `bson:"memberid"`
 	Email        string        `bson:"email"`
 	Liame        string        `bson:"liame"`
 	PasswordHash string        `bson:"passwordhash"`
 	Password     string        `bson:"password"`
-	Hint         string        `bson:"hint"`
+	Name         string        `bson:"name"`
 	Breach       string        `bson:"breach"`
 }
 
@@ -43,14 +43,13 @@ func main() {
 	}
 
 	// open the file
-	file, err := os.Open("cred")
+	file, err := os.Open("stratfor_users.csv")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening file\r\n")
 		return
 	}
 	defer file.Close()
 
-	// TODO: Threaded!
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		// For each line of the file write to the channel
@@ -75,27 +74,13 @@ func main() {
 func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
 	// create our mongodb copy
 	mgo := mgoreal.Copy()
+
 	c := mgo.DB("steamer").C("dumps")
-
-	bc := 0 // insert in counts of 100
-
-	bulk := c.Bulk()
-	bulk.Unordered()
-
 	for text := range threader {
-		if bc > 10000 {
-			bc = 0
-			bulk.Run()
-			bulk = c.Bulk()
-			bulk.Unordered()
-		}
-		bc += 1
-
 		// parse out the fields we need from this horrible format
-		idata := strings.Replace(text, "-", "", -1)
+		idata := strings.Replace(text, "\"", "", -1)
 
-		// use splitN so we don't remove pipes from the hint
-		data := strings.SplitN(idata, "|", 5)
+		data := strings.Split(idata, ",")
 
 		// validate/convert relevant data
 		memberid, err := strconv.Atoi(data[0])
@@ -105,31 +90,30 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 			continue
 		}
 
-		// remove trailing character from hint
-		if len(data) != 5 {
-			// problem! error
-			fmt.Println("Invalid data, lots failed", data)
+		if memberid == 0 {
+			fmt.Println("invalid memberid", data)
 			continue
 		}
 
-		hint := ""
-		if len(data[4]) > 2 {
-			hint = data[4][0 : len(data[4])-1]
+		if len(data) < 4 {
+			fmt.Println("invalid data", data)
+			continue
 		}
 
 		// create our struct
-		entry := AdobeData{
+		entry := StratforData{
 			MemberID:     memberid,
-			Email:        data[2],
-			Liame:        Reverse(data[2]),
-			PasswordHash: data[3],
-			Hint:         hint,
-			Breach:       "AdobeUsers",
+			Email:        data[3],
+			Liame:        Reverse(data[3]),
+			PasswordHash: data[2],
+			Name:         data[1],
+			Breach:       "StratforUsers",
 		}
-		bulk.Insert(entry)
+		err = c.Insert(entry)
+		if err != nil {
+			fmt.Println("error inserting ", data, err)
+		}
 	}
-	// final run to be done
-	bulk.Run()
 	doner <- true
 }
 

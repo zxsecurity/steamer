@@ -1,14 +1,14 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"os"
 	"path/filepath"
-	"fmt"
-	"bufio"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -25,7 +25,7 @@ type LinkedinData struct {
 func main() {
 	// Connect to mongodb
 	mdb, err := mgo.Dial("localhost")
-	mdb.SetSocketTimeout(1 * time.Hour)
+	mdb.SetSocketTimeout(48 * time.Hour)
 	defer mdb.Close()
 
 	if err != nil {
@@ -33,8 +33,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Our collection for generic dump data
-	c := mdb.DB("steamer").C("dumps")
+	threads := 15
+	sqlthreader := make(chan string, threads*20) // buffered to 20 * thread size
+	sqldoner := make(chan bool, threads)
+
+	for i := 0; i < threads; i++ {
+		go importSQLLine(sqlthreader, mdb, sqldoner)
+	}
 
 	fmt.Println("Importing SQL")
 
@@ -48,9 +53,15 @@ func main() {
 	scanner := bufio.NewScanner(sqlfile)
 	for scanner.Scan() {
 		// For each line of the SQL
-		importSQLLine(scanner.Text(), *c)
+		sqlthreader <- scanner.Text()
 	}
+	close(sqlthreader)
 
+	// wait until all threads signal done
+	for i := 0; i < threads; i++ {
+		<-sqldoner
+		fmt.Println("SQL Thread signaled done!")
+	}
 	fmt.Println("SQL imported")
 
 	// Glob for our files
@@ -60,8 +71,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	threads := 15
-	threader := make(chan string, threads * 20) // buffered to 20 * thread size
+	threader := make(chan string, threads*20) // buffered to 20 * thread size
 	doner := make(chan bool, threads)
 
 	for i := 0; i < threads; i++ {
@@ -102,37 +112,56 @@ func main() {
 	}
 }
 
-func importSQLLine(text string, c mgo.Collection) {
-	// Check that these will be valid
-	if (strings.Index(text, "'") + 1) >= (strings.Index(text, ",") - 1) {
-		// invalid row
-		fmt.Println("invalid", text)
-		return
-	}
-	if (strings.Index(text, ",") + 3) >= (strings.LastIndex(text, "'")) {
-		// invalid row
-		fmt.Println("invalid2", text)
-		return
-	}
-	memberidstr := text[strings.Index(text, "'") + 1:strings.Index(text, ",") - 1]
-	memberid, err := strconv.Atoi(memberidstr)
-	if err != nil {
-		fmt.Println("Error converting MemberID ", memberidstr)
-		return
-	}
-	email := text[strings.Index(text, ",") + 3:strings.LastIndex(text, "'")]
+func importSQLLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
+	// create a real collection/mgo
+	mgo := mgoreal.Copy()
+	c := mgo.DB("steamer").C("dumps")
 
-	entry := LinkedinData{
-		MemberID: memberid,
-		Email: email,
-		Liame: Reverse(email),
-		Breach: "LinkedIn2016",
+	bc := 0 // insert in counts of 100
+
+	bulk := c.Bulk()
+	bulk.Unordered()
+
+	for text := range threader {
+		if bc > 1000 {
+			bc = 0
+			bulk.Run()
+			bulk = c.Bulk()
+			bulk.Unordered()
+		}
+		bc += 1
+		// Check that these will be valid
+		if (strings.Index(text, "'") + 1) >= (strings.Index(text, ",") - 1) {
+			// invalid row
+			fmt.Println("invalid", text)
+			continue
+		}
+		if (strings.Index(text, ",") + 3) >= (strings.LastIndex(text, "'")) {
+			// invalid row
+			fmt.Println("invalid2", text)
+			continue
+		}
+		memberidstr := text[strings.Index(text, "'")+1 : strings.Index(text, ",")-1]
+		memberid, err := strconv.Atoi(memberidstr)
+		if err != nil {
+			fmt.Println("Error converting MemberID ", memberidstr)
+			continue
+		}
+		email := text[strings.Index(text, ",")+3 : strings.LastIndex(text, "'")]
+
+		entry := LinkedinData{
+			MemberID: memberid,
+			Email:    email,
+			Liame:    Reverse(email),
+			Breach:   "LinkedIn2016",
+		}
+		// Insert into database
+		bulk.Insert(entry)
 	}
-	// Insert into database
-	err = c.Insert(entry)
-	if err != nil {
-		fmt.Println("error inserting into db", err)
-	}
+	// final bulk insert
+	bulk.Run()
+
+	doner <- true
 }
 
 func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
@@ -178,10 +207,10 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 			if len(results) > 1 {
 				// a complex situation, but the easiest solution is to insert a new collection that matches the previous one(s)
 				entry := LinkedinData{
-					MemberID: memberid,
-					Email: results[0].Email,
-					Liame: Reverse(results[0].Email),
-					Breach: "LinkedIn2016",
+					MemberID:     memberid,
+					Email:        results[0].Email,
+					Liame:        Reverse(results[0].Email),
+					Breach:       "LinkedIn2016",
 					PasswordHash: data[1],
 				}
 				err = c.Insert(entry)
@@ -194,7 +223,7 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 			if len(results) == 1 {
 				// we can skip if the entry is already "up to date"
 				if results[0].PasswordHash == data[1] {
-					continue;
+					continue
 				}
 
 				if results[0].PasswordHash == "" {
@@ -203,10 +232,10 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 				} else {
 					// WE have a new never seen before hash for this email!
 					entry := LinkedinData{
-						MemberID: memberid,
-						Email: results[0].Email,
-						Liame: Reverse(results[0].Email),
-						Breach: "LinkedIn2016",
+						MemberID:     memberid,
+						Email:        results[0].Email,
+						Liame:        Reverse(results[0].Email),
+						Breach:       "LinkedIn2016",
 						PasswordHash: data[1],
 					}
 					err = c.Insert(entry)
@@ -229,9 +258,9 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 			if len(results) < 1 {
 				// create a new result
 				entry := LinkedinData{
-					Email: data[0],
-					Liame: Reverse(data[0]),
-					Breach: "LinkedIn2016",
+					Email:        data[0],
+					Liame:        Reverse(data[0]),
+					Breach:       "LinkedIn2016",
 					PasswordHash: data[1],
 				}
 				err = c.Insert(entry)
@@ -267,10 +296,10 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 				}
 				// lets just add a new result I guess and hope for the best!
 				entry := LinkedinData{
-					MemberID: results[0].MemberID,
-					Email: data[0],
-					Liame: Reverse(data[0]),
-					Breach: "LinkedIn2016",
+					MemberID:     results[0].MemberID,
+					Email:        data[0],
+					Liame:        Reverse(data[0]),
+					Breach:       "LinkedIn2016",
 					PasswordHash: data[1],
 				}
 				err = c.Insert(entry)
