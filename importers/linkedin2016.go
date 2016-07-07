@@ -193,9 +193,9 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 				continue
 			}
 
-			err = c.Find(bson.M{"breach": "LinkedIn2016", "memberid": data[0]}).All(&results)
+			err = c.Find(bson.M{"breach": "LinkedIn2016", "memberid": memberid}).All(&results)
 			if err != nil {
-				fmt.Println("error finding with memberid: ", data[0], err)
+				fmt.Println("error finding with memberid: ", memberid, err)
 				continue
 			}
 
