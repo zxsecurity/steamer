@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/fatih/structs"
 	"github.com/gorilla/mux"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -123,15 +124,46 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json, err := json.Marshal(results)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "json encoding error: %v", err)
-		http.Error(w, "Error json encoding", http.StatusInternalServerError)
-		return
+	// Output based on format
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "web"
 	}
 
-	// replace with a bytes write rather than a string conversion
-	fmt.Fprintf(w, string(json))
+	if format == "json" {
+		json, err := json.Marshal(results)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "json encoding error: %v", err)
+			http.Error(w, "Error json encoding", http.StatusInternalServerError)
+			return
+		}
+
+		// replace with a bytes write rather than a string conversion
+		fmt.Fprintf(w, string(json))
+	} else {
+		// Render the standard template with results directory
+		t, err := template.ParseFiles("templates/index.html")
+		if err != nil {
+			fmt.Printf("error template")
+		}
+		// Pass in a slice map, not a map of structs
+		var m []map[string]interface{}
+		for _, res := range results {
+			m = append(m, structs.Map(res))
+		}
+		templateData := struct {
+			Results []map[string]interface{}
+			Search  string
+			Breach  string
+			Sort    string
+		}{
+			m,
+			searchterm,
+			breachfilter,
+			sort,
+		}
+		t.Execute(w, templateData)
+	}
 }
 
 // Return a JSON response of all the breaches in the database

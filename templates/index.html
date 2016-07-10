@@ -19,39 +19,58 @@
 			<fieldset>
 				<legend>Freeform search all archived dumps</legend>
 				
-				<input type="text" name="search" style="width: 400px">
+				<input type="text" name="search" style="width: 400px" autofocus placeholder="Example: .gov (all emails ending with .gov)" {{ if .Search }}value="{{ .Search }}"{{ end }}>
 				<select name="breach">
 					<option value="all">All Dumps</option>
+					{{ if .Breach }}{{ if ne .Breach "all" }}<option value="{{ .Breach }}" selected>{{ .Breach }}</option>{{ end }}{{ end }}
 					<option>Loading...</option>
 				</select>
-				<input type="hidden" name="sort" value="any">
+				<input type="hidden" name="sort" value="{{ if .Sort }}{{ .Sort }}{{ else }}any{{ end}}">
+				<select name="format">
+					<option value="web">Web Interface</option>
+					<option value="json">JSON Export</option>
+				</select>
 				<button class="pure-button pure-button-primary search-button">Search</button>
-				<button class="pure-button pure-button-secondary json-button" type="submit">JSON</button>
 			</fieldset>
 		</form>
 
 		<div class="pure-u-1-1" id="results">
 			<table class="pure-table" style="margin: 0 auto;">
 				<thead>
-					<tr>
-					</tr>
+					{{ if .Results }}
+						{{ range $k, $v := index .Results 0 }}
+							{{ if ne $k "Id" }}
+					<th>{{ $k }}</th>
+							{{ end }}
+						{{ end }}
+					{{ end }}
 				</thead>
 				<tbody>
+					{{ range .Results }}<tr>
+						{{ range $k, $v := . }}
+							{{ if ne $k "Id" }}
+						<td>{{ $v }}</td>
+							{{ end }}
+						{{ end }}
+					</tr>{{ end }}
+
 				</tbody>
 			</table>
+
+			<hr>
 		</div>
 
-		<div class="pure-u-1-1" class="information">
+		<div class="pure-u-1-1" class="information" style="width: 800px; margin: 0 auto">
 			<p>Search the MongoDB dump database. Searches will include by default:
 			<ul>
 				<li>^search.* on email</li>
 				<li>.*search$ on email</li>
 				<li>exact match on password hash</li>
 				<li>exact match on breach (if specified)</li>
-			</ul>.</p>
+			</ul></p>
 			<p>Click on an entry in the table to view 'related' entries. Internally this works by just doing a search with that value again.</p>
-			<p>Click "JSON" to get a JSON export of the same result set displayed to you.</p>
 			<p>Click a table header element to sort by that field. Keep in mind this can be significantly slower than a non-specific sort.</p>
+			<p>Change from "Web Interface" to "JSON" if you want a raw JSON export of the results</p>
 		</div>
 	</div>
 
@@ -63,17 +82,40 @@
 				$('select[name="breach"] > :last-child').remove();
 				breaches = JSON.parse(data);
 				for (var i = 0; i < breaches.length; i++) {
+					// Don't add if it already exists
+					if ($('select[name="breach"] > option[value="' + breaches[i] + '"]').length) continue
 					$('select[name="breach"]').append('<option name="' + breaches[i] + '">' + breaches[i] + '</option>');
 				}
 			});
 
 			// Bind a search handler
 			$('.search-button').click(function() {
+				// Check if search is empty
+				if ($('input[name="search"]').val() == "") {
+					alert("Please specify a search value")
+					return false;
+				}
+
+				// If format is not webinterface, we should submit the form, else do it with AJAX
+				if ($('select[name="format"]').val() != 'web') {
+					return true;
+				}
+				// Update history with the new URL
+				history.pushState(null, "", "/search?search=" + $('input[name="search"]').val() +
+								"&breach=" + $('select[name="breach"] option:selected').val() +
+								"&sort=" + $('input[name="sort"]').val() +
+								"&format=" + $('select[name="format"]').val());
 				// Trigger an AJAX request to get the results
+				updateResults();
+				return false;
+			});
+
+			function updateResults() {
 				$.get("/search", {
 					search: $('input[name="search"]').val(),
 					breach: $('select[name="breach"] option:selected').val(),
 					sort:   $('input[name="sort"]').val(),
+					format: "json",
 					limit:  100,
 				}, function(data) {
 					// verify there were some results
@@ -100,8 +142,7 @@
 						});
 					}
 				});
-				return false;
-			});
+			};
 
 			// Set up a live bind/handler for when users click on a td and wish to see 'related' results
 			// This can be improved once we have 'exact' search matches advanced search
@@ -124,6 +165,11 @@
 				// trigger a new search
 				$('.search-button').click();
 			});
+
+			window.onpopstate = function(event) {
+				// Update input fields as required
+				document.location.replace(document.location)
+			}
 		});
 	</script>
 </body>
