@@ -25,6 +25,15 @@ Now we need to create relevant indexes for MongoDB:
   - email: 1
   - liame: 1
   - passwordhash: 1
+  
+The commnds to create the indexes are:
+- `mongo`
+- `use steamer`
+- `db.dumps.createIndex( { memberid: "hashed"}, { background: true} )`
+- `db.dumps.createIndex( { breach: 1}, { background: true} )`
+- `db.dumps.createIndex( { email: 1}, { background: true} )`
+- `db.dumps.createIndex( { liame: 1}, { background: true} )`
+- `db.dumps.createIndex( { passwordhash: 1}, { background: true} )`
 
 Install complete!
 
