@@ -1,0 +1,17 @@
+[Unit]
+Description=Steamer - Search a dump
+Documentation=https://github.com/zxsecurity/steamer/
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/steamer
+User=steamer
+ExecStart=/opt/steamer/steamer
+Restart=on-failure
+StandardOitput=syslog
+StandardError=syslog
+SyslogIdentifier=steamer
+
+[Install]
+WantedBy=multi-user.target
+Alias=steamer.service
