@@ -11,6 +11,26 @@
 		tbody td, thead th {
 			cursor: pointer;
 		}
+		.pagination {
+			display: inline-block;
+		}
+		.pagination a {
+			color: black;
+			float: left;
+			padding: 8px 16px;
+			text-decoration: none;
+			border: 1px solid #ddd;
+		}
+		.pagination a.active {
+			background-color: #8239e9;
+			color: white;
+		}
+		.disabled {
+			background-color: #cccccc;
+			color: #666666;
+			pointer-events: none;
+  			cursor: default;
+		}
 	</style>
 </head>
 <body>
@@ -26,14 +46,25 @@
 					<option>Loading...</option>
 				</select>
 				<input type="hidden" name="sort" value="{{ if .Sort }}{{ .Sort }}{{ else }}any{{ end}}">
+				<input type="hidden" name="page" value="{{ if .PageNum }}{{ .PageNum }}{{ else }}1{{ end}}">				
 				<select name="format">
 					<option value="web">Web Interface</option>
 					<option value="json">JSON Export</option>
 				</select>
+				<span>Results per page: </span>
+				<select name="limit">
+					<option value="10">10</option>
+					<option value="25">25</option>
+					<option value="50">50</option>
+					<option value="100">100</option>
+					<option value="200">200</option>
+				</select>
 				<button class="pure-button pure-button-primary search-button">Search</button>
-			</fieldset>
+			</fieldset>			
 		</form>
-
+		<input type="hidden" name="limit" value="{{ if .Limit }}{{ .Limit }}{{ else }}-1{{ end}}">
+		<div class="pure-u-2-5 pagination" id="pagination-box" style="margin-left: auto;">
+		</div>
 		<div class="pure-u-1-1" id="results">
 			<table class="pure-table" style="margin: 0 auto;">
 				<thead>
@@ -91,32 +122,137 @@
 			// Bind a search handler
 			$('.search-button').click(function() {
 				// Check if search is empty
-				if ($('input[name="search"]').val() == "") {
+				if($('input[name="search"]').val() == ""){
 					alert("Please specify a search value")
 					return false;
 				}
-
 				// If format is not webinterface, we should submit the form, else do it with AJAX
 				if ($('select[name="format"]').val() != 'web') {
 					return true;
 				}
+				// Everytime we click search, reset to page one
+				$('input[name="page"]').val('1');
+				url = constructURL($('input[name="search"]').val(),  $('select[name="breach"] option:selected').val(), 
+							$('input[name="sort"]').val(), $('select[name="format"]').val(),
+							$('input[name="page"]').val(), $('select[name="limit"] option:selected').val())
 				// Update history with the new URL
-				history.pushState(null, "", "/search?search=" + $('input[name="search"]').val() +
-								"&breach=" + $('select[name="breach"] option:selected').val() +
-								"&sort=" + $('input[name="sort"]').val() +
-								"&format=" + $('select[name="format"]').val());
+				history.pushState(null, "", url);
 				// Trigger an AJAX request to get the results
 				updateResults();
 				return false;
 			});
 
-			function updateResults() {
+			// Utility funtion to construct a url 
+			function constructURL(searchVal, breachVal, sortVal, formatVal, pageVal, limitVal){
+				// If limit is not set, we should set it to a default value
+				// Check if search is empty
+				if(searchVal == ""){
+					alert("Please specify a search value")
+					return false;
+				}
+				if (limitVal == '') {
+					limitVal.val("10");
+				}
+				url = "/search?search=" + searchVal +
+					"&breach=" + breachVal +
+					"&sort=" + sortVal +
+					"&format=" + formatVal +
+					"&page=" + pageVal +
+					"&limit=" + limitVal;
+				return url;
+			}
+			// Utility function to make pagination			
+			function makePagination() {
+				// Check if we have any results
+				if ($("#results tbody").children().length > 0){
+					// Start making pagination					
+					$('#pagination-box a').remove();
+					// Declare local vars
+					var pagenum = parseInt($('input[name="page"]').val());
+					var searchVal = $('input[name="search"]').val();
+					var breachVal = $('select[name="breach"] option:selected').val();
+					var sortVal = $('input[name="sort"]').val();
+					var formatVal =  $('select[name="format"]').val();
+					// We need to make sure if the template gets reloaded we still have the correct limit
+					if ($('input[name="limit"]').val() != "-1" ){
+						// TODO: check if limit isn;t one of the default values
+						$('select[name="limit"]').val($('input[name="limit"]').val()).change();
+					}
+					var limitVal = $('select[name="limit"] option:selected').val();		
+					// Make the previous pages
+					curPage = pagenum
+					while(curPage > 1 && (pagenum-curPage) < 3 ){
+						curPage = curPage - 1;
+						$('#pagination-box').prepend('<a href="'+
+							constructURL(searchVal, breachVal, sortVal, formatVal, curPage, limitVal)+'">'+ curPage+'</a>');						
+					}
+					// Make the previous page button
+					if (pagenum > 1){
+						$('#pagination-box').prepend('<a href="'+
+							constructURL(searchVal, breachVal, sortVal, formatVal, pagenum-1, limitVal)+'">&laquo;</a>');
+					} else {
+						$('#pagination-box').prepend('<a href="#" class="disabled">&laquo;</a>');
+					}
+					$('#pagination-box').append('<a class="active" href="#">'+pagenum+'</a>');
+					// Trigger another AJAX request to see if we have more pages, overhead is large if we need to skip a lot of results
+					$.get("/search", {
+						search: searchVal,
+						breach: breachVal,
+						sort:   sortVal,
+						format: "json",
+						page:  pagenum+1,
+						limit: limitVal,
+					}, function(data) {
+						if (data != "[]"){
+							// parse into json
+							res = JSON.parse(data);
+							if (res.length > 0){
+								// If we are on the first 4 pages, make the rest of the pages
+								if (pagenum < 4) {
+									curPage = pagenum;
+									while (curPage < 4) {
+										curPage = curPage + 1;
+										if (curPage == pagenum + 1) {
+											// active ones
+											$('#pagination-box').append('<a href="'+
+												constructURL(searchVal, breachVal, sortVal, formatVal, curPage, limitVal)+'">'+curPage+'</a>');
+										}
+										else {
+											// make empty boxes
+											$('#pagination-box').append('<a href="#">&nbsp;</a>');
+										}
+									}
+								}
+								$('#pagination-box').append('<a href="'+
+									constructURL(searchVal, breachVal, sortVal, formatVal, pagenum+1, limitVal)+'">&raquo;</a>');
+								return;
+							}							
+						}
+						// If we don't have anymore data
+						if (pagenum < 4) {
+							curPage = pagenum;
+							while (curPage < 4) {
+								curPage = curPage + 1;
+								// inactive ones
+								$('#pagination-box').append('<a class="disabled" href="'+
+									constructURL(searchVal, breachVal, sortVal, formatVal, curPage, limitVal)+'">'+curPage+'</a>');
+							}
+						}
+						$('#pagination-box').append('<a class="disabled" href="#">&raquo;</a>');
+					});
+				}				
+			}
+
+			function updateResults() {		
+				// First reset the limit set by the webserver to its default value -1
+				$('input[name="limit"]').val('-1');	
 				$.get("/search", {
 					search: $('input[name="search"]').val(),
 					breach: $('select[name="breach"] option:selected').val(),
 					sort:   $('input[name="sort"]').val(),
 					format: "json",
-					limit:  100,
+					page:  $('input[name="page"]').val(),
+					limit: $('select[name="limit"] option:selected').val(),
 				}, function(data) {
 					// verify there were some results
 					if (data == "[]") {
@@ -141,6 +277,10 @@
 							$('#results tbody tr:last-child').append('<td>' + this + '</td>');
 						});
 					}
+					// Makes the pagination after we AJAX'd, but only if our format is web
+					if ($('select[name="format"]').val() == "web"){
+						makePagination();
+					}					
 				});
 			};
 
@@ -165,11 +305,12 @@
 				// trigger a new search
 				$('.search-button').click();
 			});
-
 			window.onpopstate = function(event) {
 				// Update input fields as required
 				document.location.replace(document.location)
 			}
+			// Makes the pagination whenever we reload
+			makePagination();			
 		});
 	</script>
 </body>
