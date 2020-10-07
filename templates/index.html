@@ -8,7 +8,7 @@
 	<link rel="stylesheet" href="/css/styles.css">
 	<script src="https://code.jquery.com/jquery-3.0.0.min.js" integrity="sha256-JmvOoLtYsmqlsWxa7mDSLMwa6dZ9rrIdtrrVYRnDRH0=" crossorigin="anonymous"></script>
 	<style>
-		tbody td, thead th {
+		thead th {
 			cursor: pointer;
 		}
 		.pagination {
@@ -22,7 +22,7 @@
 			border: 1px solid #ddd;
 		}
 		.pagination a.active {
-			background-color: #8239e9;
+			background-color: #6b696d;
 			color: white;
 		}
 		.disabled {
@@ -31,21 +31,45 @@
 			pointer-events: none;
   			cursor: default;
 		}
+		/* https://stackoverflow.com/questions/1853662/how-to-show-page-loading-div-until-the-page-has-finished-loading */
+		#loading-indicator {
+			width: 100%;
+			height: 100%;
+			top: 0;
+			left: 0;
+			position: fixed;
+			display: block;
+			opacity: 0.7;
+			background-color: #fff;
+			z-index: 99;
+			text-align: center;
+		}
+
+		#loading-image {
+			position: absolute;
+			margin: auto;
+			top: 50%;
+			z-index: 100;
+		}
+
 	</style>
 </head>
-<body>
+<body>	
+	<div id="loading-indicator" style="display: none">
+		<img src="images/ajax-loader.gif" id="loading-image" alt="Loading...">
+	</div>	
 	<div class="pure-g">
+		<img src="/images/logo.png", alt="logo" style="margin: 0 auto; text-align: center;">
 		<form class="pure-form pure-u-1-1" action="/search" method="get" style="margin: 0 auto; text-align: center;">
 			<fieldset>
-				<legend>Freeform search all archived dumps</legend>
-				
+				<legend>Freeform search all archived dumps</legend>				
 				<input type="text" name="search" style="width: 400px" autofocus placeholder="Example: .gov (all emails ending with .gov)" {{ if .Search }}value="{{ .Search }}"{{ end }}>
 				<select name="breach">
 					<option value="all">All Dumps</option>
 					{{ if .Breach }}{{ if ne .Breach "all" }}<option value="{{ .Breach }}" selected>{{ .Breach }}</option>{{ end }}{{ end }}
 					<option>Loading...</option>
 				</select>
-				<input type="hidden" name="sort" value="{{ if .Sort }}{{ .Sort }}{{ else }}any{{ end}}">
+				<input type="hidden" name="sort" value="{{ if .Sort }}{{ .Sort }}{{ else }}email{{ end}}">
 				<input type="hidden" name="page" value="{{ if .PageNum }}{{ .PageNum }}{{ else }}1{{ end}}">				
 				<select name="format">
 					<option value="web">Web Interface</option>
@@ -62,8 +86,8 @@
 				<button class="pure-button pure-button-primary search-button">Search</button>
 			</fieldset>			
 		</form>
-		<input type="hidden" name="limit" value="{{ if .Limit }}{{ .Limit }}{{ else }}-1{{ end}}">
-		<div class="pure-u-2-5 pagination" id="pagination-box" style="margin-left: auto;">
+		<input type="hidden" name="limit" value="{{ if .Limit }}{{ .Limit }}{{ else }}-1{{ end}}">		
+		<div class="pure-u-3-8 pagination" id="pagination-box" style="margin-left: auto;">
 		</div>
 		<div class="pure-u-1-1" id="results">
 			<table class="pure-table" style="margin: 0 auto;">
@@ -107,6 +131,8 @@
 
 	<script type="text/javascript">
 		$(document).ready(function(){
+			// TODO: Loading Indicator loads when redirected
+			// TODO: Page Refresh Part of Page 
 			// AJAX in the breach list
 			$.get("/listbreaches", function(data) {
 				// remove the loading item
@@ -181,7 +207,7 @@
 					var limitVal = $('select[name="limit"] option:selected').val();		
 					// Make the previous pages
 					curPage = pagenum
-					while(curPage > 1 && (pagenum-curPage) < 3 ){
+					while(curPage > 1 && (pagenum-curPage) < 2 ){
 						curPage = curPage - 1;
 						$('#pagination-box').prepend('<a href="'+
 							constructURL(searchVal, breachVal, sortVal, formatVal, curPage, limitVal)+'">'+ curPage+'</a>');						
@@ -193,7 +219,9 @@
 					} else {
 						$('#pagination-box').prepend('<a href="#" class="disabled">&laquo;</a>');
 					}
-					$('#pagination-box').append('<a class="active" href="#">'+pagenum+'</a>');
+					$('#pagination-box').append('<a class="active" href="#">'+pagenum+'</a>');		
+					// Display loader					
+					$('#loading-indicator').css('display','block');		
 					// Trigger another AJAX request to see if we have more pages, overhead is large if we need to skip a lot of results
 					$.get("/search", {
 						search: searchVal,
@@ -208,9 +236,9 @@
 							res = JSON.parse(data);
 							if (res.length > 0){
 								// If we are on the first 4 pages, make the rest of the pages
-								if (pagenum < 4) {
+								if (pagenum < 3) {
 									curPage = pagenum;
-									while (curPage < 4) {
+									while (curPage < 3) {
 										curPage = curPage + 1;
 										if (curPage == pagenum + 1) {
 											// active ones
@@ -219,26 +247,27 @@
 										}
 										else {
 											// make empty boxes
-											$('#pagination-box').append('<a href="#">&nbsp;</a>');
+											$('#pagination-box').append('<a href="#">...</a>');
 										}
 									}
 								}
 								$('#pagination-box').append('<a href="'+
 									constructURL(searchVal, breachVal, sortVal, formatVal, pagenum+1, limitVal)+'">&raquo;</a>');
+								$('#loading-indicator').hide();	
 								return;
 							}							
 						}
 						// If we don't have anymore data
-						if (pagenum < 4) {
+						if (pagenum < 3) {
 							curPage = pagenum;
-							while (curPage < 4) {
+							while (curPage < 3) {
 								curPage = curPage + 1;
-								// inactive ones
-								$('#pagination-box').append('<a class="disabled" href="'+
-									constructURL(searchVal, breachVal, sortVal, formatVal, curPage, limitVal)+'">'+curPage+'</a>');
+								// make empty boxes
+								$('#pagination-box').append('<a class="disabled" href="#">&nbsp;</a>');
 							}
 						}
 						$('#pagination-box').append('<a class="disabled" href="#">&raquo;</a>');
+						$('#loading-indicator').hide();	
 					});
 				}				
 			}
@@ -246,6 +275,8 @@
 			function updateResults() {		
 				// First reset the limit set by the webserver to its default value -1
 				$('input[name="limit"]').val('-1');	
+				// Display loader
+				$('#loading-indicator').css('display','block');	
 				$.get("/search", {
 					search: $('input[name="search"]').val(),
 					breach: $('select[name="breach"] option:selected').val(),
@@ -257,6 +288,7 @@
 					// verify there were some results
 					if (data == "[]") {
 						alert("No results found");
+						$('#loading-indicator').hide();	
 						return;
 					}
 					// parse into json
@@ -280,17 +312,10 @@
 					// Makes the pagination after we AJAX'd, but only if our format is web
 					if ($('select[name="format"]').val() == "web"){
 						makePagination();
-					}					
+					}
+					// $('#loading-indicator').hide();				
 				});
 			};
-
-			// Set up a live bind/handler for when users click on a td and wish to see 'related' results
-			// This can be improved once we have 'exact' search matches advanced search
-			$('tbody').on("click", "td", function() {
-				// Take the value of the td, put it into the input box, and do a search
-				$('input[name="search"]').val($(this).text());
-				$('.search-button').click();
-			});
 
 			$('thead').on("click", "th", function() {
 				// Add a sort, flip if one already exists

@@ -32,6 +32,7 @@ func main() {
 	r.HandleFunc("/listbreaches", ListBreaches)
 
 	http.Handle("/", r)
+	http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("templates/images"))))
 	http.ListenAndServe(":8080", nil)
 }
 
