@@ -135,7 +135,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	skipNum := (page - 1) * limit
 	// TODO: Check if skipNum will overflow
 	// Check if we need to limit
-	err = query.Skip(skipNum).Limit(limit).All(&results) 
+	err = query.Skip(skipNum).Limit(limit).All(&results)
 
 	if err != nil {
 		fmt.Fprintf(w, "error searching %v", err)
@@ -175,7 +175,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 			Breach  string
 			Sort    string
 			PageNum string
-			Limit string
+			Limit   string
 		}{
 			m,
 			searchterm,
