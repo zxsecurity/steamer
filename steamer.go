@@ -32,6 +32,7 @@ func main() {
 	r.HandleFunc("/listbreaches", ListBreaches)
 
 	http.Handle("/", r)
+	http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("templates/images"))))
 	http.ListenAndServe(":8080", nil)
 }
 
@@ -101,10 +102,23 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		query = query.Sort(sort)
 	}
 
+	// Get the page number
+	spage := r.URL.Query().Get("page")
+	// Display the first page if page is not set
+	if spage == "" {
+		spage = "1"
+	}
+	page, err := strconv.Atoi(spage)
+	if err != nil {
+		http.Error(w, "Error parsing limit", http.StatusInternalServerError)
+		return
+	}
+
 	// Limit if required
 	slimit := r.URL.Query().Get("limit")
+
 	if slimit == "" {
-		slimit = "1000"
+		slimit = "10"
 	}
 	limit, err := strconv.Atoi(slimit)
 	if err != nil {
@@ -117,7 +131,11 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		limit = 10000
 	}
 
-	err = query.Limit(limit).All(&results)
+	// Calculate limit and numner of entries to skip from page number
+	skipNum := (page - 1) * limit
+	// TODO: Check if skipNum will overflow
+	// Check if we need to limit
+	err = query.Skip(skipNum).Limit(limit).All(&results)
 
 	if err != nil {
 		fmt.Fprintf(w, "error searching %v", err)
@@ -156,11 +174,15 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 			Search  string
 			Breach  string
 			Sort    string
+			PageNum string
+			Limit   string
 		}{
 			m,
 			searchterm,
 			breachfilter,
 			sort,
+			spage,
+			slimit,
 		}
 		t.Execute(w, templateData)
 	}
