@@ -17,14 +17,17 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cheggaaa/pb/v3"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type GenericData struct {
@@ -39,6 +42,10 @@ type GenericData struct {
 }
 
 func main() {
+	// Get command-line flags
+	verbose := flag.Bool("v", false, "Displays progress bar")
+	flag.Parse()
+
 	// Connect to mongodb
 	mdb, err := mgo.Dial("localhost")
 	defer mdb.Close()
@@ -50,16 +57,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	threads := 1
+	threads := 15
 	threader := make(chan string, threads*20) // buffered to 20 * thread size
 	doner := make(chan bool, threads)
 
+	// Set filename
+	filename := "Zynga.com.sql"
+
+	// Make ProgressBar
+	var bar *pb.ProgressBar
+	if *verbose {
+		// Time it
+		start := time.Now()
+		bar = makePbar(filename)
+		elapsed := time.Since(start)
+		fmt.Printf("Making pbar took %s\n", elapsed)
+		if bar == nil {
+			fmt.Fprintf(os.Stderr, "Could not open file %v\r\n", filename)
+			return
+		}
+	}
 	for i := 0; i < threads; i++ {
-		go importLine(threader, mdb, doner)
+		go importLine(threader, mdb, doner, bar)
 	}
 
 	// open the file
-	file, err := os.Open("patreon.sql")
+	file, err := os.Open(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening file\r\n")
 		return
@@ -74,7 +97,7 @@ func main() {
 		s := string(line)
 
 		// Lines with the INSERT line should be further parsed into individual accounts
-		if strings.Contains(s, "INSERT INTO `tblUsers`") {
+		if strings.Contains(s, "INSERT INTO `users`") {
 			// It's a valid line we should be parsing!
 			threader <- s
 		}
@@ -96,11 +119,15 @@ func main() {
 	// wait until all threads signal done
 	for i := 0; i < threads; i++ {
 		<-doner
-		fmt.Println("Thread signaled done!")
 	}
+	// finish progress bar
+	if bar != nil {
+		bar.Finish()
+	}
+
 }
 
-func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
+func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool, bar *pb.ProgressBar) {
 	// create our mongodb copy
 	mgo := mgoreal.Copy()
 	c := mgo.DB("steamer").C("dumps")
@@ -112,12 +139,14 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 
 	for text := range threader {
 		if bc > 10000 {
-			bc = 0
 			bulk.Run()
+			if bar != nil {
+				bar.Add(bc)
+			}
+			bc = 0
 			bulk = c.Bulk()
 			bulk.Unordered()
 		}
-
 		// Split out the INSERT statement so we have the tuples we need
 		// Start by removing the first and last characters
 		text2 := text[31 : len(text)-2]
@@ -126,6 +155,7 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 		users := strings.Split(text2, "),(")
 
 		// Now loop through and process each line and INSERT as required
+		tmpBulkCount := 0
 		for _, row := range users {
 			// use splitN so we don't remove pipes from the hint
 			data := strings.Split(row, ",")
@@ -133,34 +163,65 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 			// validate/convert relevant data
 			memberid, err := strconv.Atoi(data[0])
 			if err != nil {
-				// invalid line I guess?
 				fmt.Println("Invalid data read, conversion failed", data)
 				continue
 			}
 
 			// remove trailing character from hint
 			if len(data) < 23 {
-				// problem! error
 				fmt.Println("Invalid data, epxected a len > 23, got ", len(data), row)
 				continue
 			}
 
-			// create our struct
-			entry := GenericData{
-				MemberID:     memberid,
-				Email:        data[1],
-				Liame:        Reverse(data[1]),
-				PasswordHash: data[4],
-				Username:     data[13],
-				Breach:       false(),
+			// ensure email has an '@' in it
+			if !strings.Contains(data[1], "@") {
+				continue
 			}
+			// Check if our user is deleted
+			emailStr := strings.Split(data[1], "-")
 
-			bulk.Insert(entry)
-			bc += 1
+			if len(emailStr) == 3 && emailStr[1] == "deleted" {
+				// Deleted user
+				continue
+			} else {
+				// crypted_udid_password may just be the device ID so we ignore it
+				// we only include crypted_custom_password which may be the actual user password
+				// Import the user
+				if len(data[9]) == 42 && len(data[7]) == 42 {
+					// remove space in email
+					email := strings.ReplaceAll(data[1][1:len(data[1])-1], " ", "")
+					// remove some trailing \' and \" in emails
+					if strings.Contains(email, "\\") {
+						email = strings.Split(email, "\\")[0]
+					}
+					username := data[2][1 : len(data[2])-1]
+					crypted_custom_password := data[9][1 : len(data[9])-1]
+					salt := data[7][1 : len(data[7])-1]
+					pwdHashSalt := salt + ":" + crypted_custom_password
+					// create our struct
+					entry := GenericData{
+						MemberID:     memberid,
+						Email:        email,
+						Liame:        Reverse(email),
+						PasswordHash: pwdHashSalt,
+						Username:     username,
+						Breach:       "Zynga2019",
+					}
+					bulk.Insert(entry)
+					tmpBulkCount += 1
+				}
+			}
+		}
+		bc += tmpBulkCount
+		if bar != nil {
+			bar.Add(len(users) - tmpBulkCount)
 		}
 	}
 	// final run to be done
 	bulk.Run()
+	if bar != nil {
+		bar.Add(bc)
+	}
 	doner <- true
 }
 
@@ -170,4 +231,43 @@ func Reverse(s string) string {
 		runes[i], runes[j] = runes[j], runes[i]
 	}
 	return string(runes)
+}
+
+func makePbar(filename string) *pb.ProgressBar {
+	fmt.Println("Making pbar...")
+	// count total number of records we need to process
+	count := 0
+	// open the file
+	file, err := os.Open(filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening file\r\n")
+		return nil
+	}
+	defer file.Close()
+
+	// Quite large, perhaps not required, but better safe than sorry
+	r := bufio.NewReaderSize(file, 1024*1024)
+
+	line, isPrefix, err := r.ReadLine()
+	for err == nil && !isPrefix {
+		text := string(line)
+
+		// Lines with the INSERT line should be further parsed into individual accounts
+		if strings.Contains(text, "INSERT INTO `users`") {
+			text2 := text[31 : len(text)-2]
+			count += len(strings.Split(text2, "),("))
+		}
+
+		line, isPrefix, err = r.ReadLine()
+	}
+	if isPrefix {
+		fmt.Println("buffer size to small -- increase it in the NewReaderSize line!")
+		return nil
+	}
+	if err != io.EOF {
+		fmt.Fprintf(os.Stderr, "Error scanning file - %s\r\n", err)
+		return nil
+	}
+	fmt.Println("Total number of records: ", count)
+	return pb.StartNew(count)
 }

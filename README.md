@@ -12,7 +12,7 @@ Install
 -------
 
 - Install Go and MongoDB.
-- `go get gopkg.in/mgo.v2 && go get github.com/gorilla/mux`
+- Dependencies are managed using Go modules in `go.mod`. Therefore, go will automatically download the required modules if it can't find one.
 
 At this point, it is recommended to import one of the more simple breaches that do not require an index to import.
 
@@ -50,6 +50,12 @@ Copy the `importers/importer-template.go` file as appropriate. Fill it in with r
 That template is threaded and designed for CSVs. See `./importers/linkedin2016.go` for a more complex example.
 
 If you write an importer for a public breach, please send a pull request so everyone can import it too. Please note that no public breaches are provided here in the repository itself.
+
+Running an importer
+-----------------
+Running an importer is straightforward. Just change the filename in the source code if needed and run `go run ./importers/<importer_name>.go`. 
+There is also a verbose flag that shows a progress bar, if you want to use it just add the flag `go run importers/<importer_name>.go -v`.
+However, be mindful that enabling it will introduce several minutes of delay on average depending on the size of the file.
 
 Problems?
 ---------
