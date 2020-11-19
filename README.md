@@ -26,7 +26,7 @@ Now we need to create relevant indexes for MongoDB:
   - liame: 1
   - passwordhash: 1
   
-The commnds to create the indexes are:
+The commands to create the indexes are:
 - `mongo`
 - `use steamer`
 - `db.dumps.createIndex( { memberid: "hashed"}, { background: true} )`
@@ -53,7 +53,7 @@ If you write an importer for a public breach, please send a pull request so ever
 
 Running an importer
 -----------------
-Running an importer is straightforward. Just change the filename in the source code if needed and run `go run ./importers/<importer_name>.go`. 
+Running an importer is straightforward. Just run `go run ./importers/<importer_name>.go` or supply an alternative path to the dump file if required by running `go run ./importers/<importer_name>.go -i <path_to_dump_file>`. 
 There is also a verbose flag that shows a progress bar, if you want to use it just add the flag `go run importers/<importer_name>.go -v`.
 However, be mindful that enabling it will introduce several minutes of delay on average depending on the size of the file.
 
