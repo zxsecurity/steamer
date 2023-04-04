@@ -10,7 +10,7 @@ type TemplateLineParser struct{}
 
 func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	entries := make([]interface{}, 0)
-	data := util.SplitString(line, ',', true, true)
+	data := util.SplitString(line, ' ', true, true)
 	if len(data) < 4 {
 		entries = append(entries, interface{}(nil))
 		return entries, nil
