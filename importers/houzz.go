@@ -13,7 +13,7 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	// split a line in the text file
 	data := util.SplitString(line, '\s', true, true)
 	// check data here
-	if len(data) > 2 || strings.Contains(data[3], "SEC"){
+	if len(data) < 5 || !strings.Contains(data[3], "SEC") {
 		entries = append(entries, interface{}(nil))
 		return entries, nil
 	}
