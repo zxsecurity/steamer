@@ -5,8 +5,13 @@ import (
 	"fmt"
 	"github.com/fatih/structs"
 	"github.com/gorilla/mux"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/mgo.v2"	//outdated
+	"gopkg.in/mgo.v2/bson"	//outdated perhaps
+	// "go.mongodb.org/mongo-driver/mongo"	//outdated
+	// "go.mongodb.org/mongo-driver/bson"	//outdated
+	// "go.mongodb.org/mongo-driver/bson/primitive"
+	// "go.mongodb.org/mongo-driver/mongo/options"
+	"context"
 	"html/template"
 	"net/http"
 	"os"
@@ -14,17 +19,19 @@ import (
 	"strconv"
 )
 
-var mdb *mgo.Session
+var mdb *mongo.Client
 
 func main() {
 	var err error
-	mdb, err = mgo.Dial("localhost")
+	// mdb, err = mgo.Dial("localhost")
+	ctx := context.TODO()
+	mdb, err = mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost"))//TODO: check this is correct
 
 	if err != nil {
-		fmt.Println("Could not connect ot MongoDB: ", err)
+		fmt.Println("Could not connect to MongoDB: ", err)
 		os.Exit(1)
 	}
-	defer mdb.Close()
+	// defer mdb.Close() //TODO: close the connection at the end??
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", HomeHandler)
@@ -45,7 +52,7 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type BreachEntry struct {
-	Id           bson.ObjectId `json:"id" bson:"_id,omitempty"`
+	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	MemberID     int           `bson:"memberid"`
 	Email        string        `bson:"email"`
 	PasswordHash string        `bson:"passwordhash"`
@@ -68,7 +75,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Begin a search
-	mysess := mdb.Copy()
+	mysess := mdb.Copy() //TODO: I AM DOING THIS ATM
 	c := mysess.DB("steamer").C("dumps")
 
 	results := []BreachEntry{}

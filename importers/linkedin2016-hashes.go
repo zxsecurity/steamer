@@ -3,15 +3,20 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+
+	"go.mongodb.org/mongo-driver/bson" //outdated
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo" //outdated
+	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"context"
 	"os"
 	"strings"
 	"time"
 )
 
 type LinkedinData struct {
-	Id           bson.ObjectId `json:"id" bson:"_id,omitempty"`
+	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	MemberID     int           `bson:"memberid"`
 	Email        string        `bson:"email"`
 	PasswordHash string        `bson:"passwordhash"`
@@ -21,11 +26,13 @@ type LinkedinData struct {
 
 func main() {
 	// Connect to mongodb
-	mdb, err := mgo.Dial("localhost")
-	defer mdb.Close()
+	ctx := context.TODO()
+	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(1 * time.Hour)
+	mdb, err := mongo.Connect(ctx, clientOptions)//TODO: check this is correct
+	// defer mdb.Close()
 
 	// set timeout high to prevent timeouts (weird!)
-	mdb.SetSocketTimeout(1 * time.Hour)
+	// mdb.SetSocketTimeout(1 * time.Hour)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not connect to MongoDB: %v\r\n", err)

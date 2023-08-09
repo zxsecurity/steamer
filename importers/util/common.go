@@ -10,12 +10,17 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb/v3"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	// "gopkg.in/mgo.v2"      //outdated
+	// "gopkg.in/mgo.v2/bson" //outdated
+	"go.mongodb.org/mongo-driver/bson" //outdated
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo" //outdated
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"context"
 )
 
 type GenericData struct {
-	Id           bson.ObjectId `json:"id" bson:"_id,omitempty"`
+	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	MemberID     int           `bson:"memberid"`
 	Email        string        `bson:"email"`
 	Liame        string        `bson:"liame"`
@@ -39,7 +44,7 @@ type Importer struct {
 	numThreads int
 	threader   chan string
 	doner      chan bool
-	mongo      *mgo.Session
+	mongo      *mongo.Client
 	verbose    bool
 	fileName   string
 }
@@ -61,11 +66,13 @@ func MakeImporter(defaultFileName string, parser LineParser, numThreads int) (*I
 	flag.Parse()
 
 	// Connect to mongodb
-	mdb, err := mgo.Dial("localhost")
+	ctx := context.TODO()
+	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(24 * time.Hour)
+	mdb, err := mongo.Connect(ctx, clientOptions)//TODO: check this is correct
 	if err != nil {
 		return nil, fmt.Errorf("Could not connect to MongoDB: %v\r\n", err)
 	}
-	mdb.SetSocketTimeout(24 * time.Hour)
+	// mdb.SetSocketTimeout(24 * time.Hour)
 
 	// Make ProgressBar
 	var bar *pb.ProgressBar
