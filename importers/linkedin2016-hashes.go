@@ -44,7 +44,7 @@ func main() {
 	doner := make(chan bool, threads)
 
 	for i := 0; i < threads; i++ {
-		go importLine(threader, mdb, doner)
+		go importLine(threader, mdb, doner, ctx)
 	}
 
 	// open the file
@@ -77,11 +77,11 @@ func main() {
 	}
 }
 
-func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
+func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool, ctx context.Context) {
 	// create our mongodb copy
-	mgo := mgoreal.Copy()
+	// mgo := mgoreal.Copy()
 
-	c := mgo.DB("steamer").C("dumps")
+	c := mgoreal.Database("steamer").Collection("dumps")
 	for text := range threader {
 		// Split the line into x:y
 		data := strings.SplitN(text, ":", 2)
@@ -92,7 +92,7 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 		}
 
 		// update any relevant results in place
-		_, err := c.UpdateAll(bson.M{"breach": "LinkedIn2016", "passwordhash": data[0]},
+		_, err := c.UpdateMany(ctx, bson.M{"breach": "LinkedIn2016", "passwordhash": data[0]},
 			bson.M{"$set": bson.M{"password": data[1]}})
 		if err != nil {
 			fmt.Printf("error updating row %v %v %v\r\n", data[0], data[1], err)
