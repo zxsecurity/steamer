@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"github.com/fatih/structs"
 	"github.com/gorilla/mux"
-	"gopkg.in/mgo.v2"	//outdated
-	"gopkg.in/mgo.v2/bson"	//outdated perhaps
-	// "go.mongodb.org/mongo-driver/mongo"	//outdated
-	// "go.mongodb.org/mongo-driver/bson"	//outdated
-	// "go.mongodb.org/mongo-driver/bson/primitive"
-	// "go.mongodb.org/mongo-driver/mongo/options"
+	// "gopkg.in/mgo.v2"	//outdated
+	// "gopkg.in/mgo.v2/bson"	//outdated perhaps
+	"go.mongodb.org/mongo-driver/mongo"	//outdated
+	"go.mongodb.org/mongo-driver/bson"	//outdated
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"context"
 	"html/template"
 	"net/http"
@@ -24,7 +24,7 @@ var mdb *mongo.Client
 func main() {
 	var err error
 	// mdb, err = mgo.Dial("localhost")
-	ctx := context.TODO()
+	ctx := context.Background()
 	mdb, err = mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost"))//TODO: check this is correct
 
 	if err != nil {
@@ -75,26 +75,28 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Begin a search
-	mysess := mdb.Copy() //TODO: I AM DOING THIS ATM
-	c := mysess.DB("steamer").C("dumps")
+	// mysess := mdb.Copy() //TODO: I AM DOING THIS ATM. i dont think this is needed???
+	// c := mysess.DB("steamer").C("dumps")
+	c := mdb.Database("steamer").Collection("dumps")
 
 	results := []BreachEntry{}
 
-	var query *mgo.Query
+	// var query *mgo.Query
+	var cursor *mongo.Cursor
 	// TODO Remove unnessecary duplicated code here
-	if breachfilter == "all" {
-		query = c.Find(bson.M{"$or": []interface{}{
-			bson.M{"email": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), ""}},
+	if breachfilter == "all" {//FIXME: this might require context!!!!!!!!!. also error handling??
+		cursor, _ = c.Find(context.Background(), bson.M{"$or": []interface{}{
+			bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
 			bson.M{"passwordhash": searchterm},
-			bson.M{"liame": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), ""}},
+			bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
 		}})
 	} else {
-		query = c.Find(bson.M{"$and": []interface{}{
+		cursor, _ = c.Find(context.Background(), bson.M{"$and": []interface{}{
 			bson.M{"breach": breachfilter},
 			bson.M{"$or": []interface{}{
-				bson.M{"email": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), ""}},
+				bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
 				bson.M{"passwordhash": searchterm},
-				bson.M{"liame": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), ""}},
+				bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
 			}},
 		}})
 	}
@@ -106,7 +108,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if sort != "all" {
-		query = query.Sort(sort)
+		cursor = cursor.Sort(sort)
 	}
 
 	// Get the page number
@@ -142,7 +144,8 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	skipNum := (page - 1) * limit
 	// TODO: Check if skipNum will overflow
 	// Check if we need to limit
-	err = query.Skip(skipNum).Limit(limit).All(&results)
+	// err = query.Skip(skipNum).Limit(limit).All(&results)
+	err = cursor.Skip(skipNum).Limit(limit).All(&results)
 
 	if err != nil {
 		fmt.Fprintf(w, "error searching %v", err)
@@ -198,8 +201,9 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 // Return a JSON response of all the breaches in the database
 func ListBreaches(w http.ResponseWriter, r *http.Request) {
 	// db.dumps.distinct("breaches")
-	mysess := mdb.Copy()
-	c := mysess.DB("steamer").C("dumps")
+	// mysess := mdb.Copy()
+	// c := mysess.DB("steamer").C("dumps")
+	c := mdb.Database("steamer").Collection("dumps")
 
 	var results []string
 	err := c.Find(nil).Distinct("breach", &results)

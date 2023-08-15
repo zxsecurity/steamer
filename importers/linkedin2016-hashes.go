@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"fmt"
 
-	"go.mongodb.org/mongo-driver/bson" //outdated
+	"go.mongodb.org/mongo-driver/bson" 
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo" //outdated
+	"go.mongodb.org/mongo-driver/mongo" 
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"context"
@@ -29,7 +29,7 @@ func main() {
 	ctx := context.TODO()
 	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(1 * time.Hour)
 	mdb, err := mongo.Connect(ctx, clientOptions)//TODO: check this is correct
-	// defer mdb.Close()
+	// defer mdb.Close()//FIXME: need to close this when done!!!!
 
 	// set timeout high to prevent timeouts (weird!)
 	// mdb.SetSocketTimeout(1 * time.Hour)
