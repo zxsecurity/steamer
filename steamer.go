@@ -87,27 +87,6 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 
 	results := []BreachEntry{}
 
-	// var query *mgo.Query
-	var cursor *mongo.Cursor
-	opts := options.Find().SetSort(bson.D{{Key: sort, Value: 1}})
-	// TODO Remove unnessecary duplicated code here
-	if breachfilter == "all" {//FIXME: error handling??
-		cursor, _ = c.Find(context.Background(), bson.M{"$or": []interface{}{
-			bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
-			bson.M{"passwordhash": searchterm},
-			bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
-		}}, opts)
-	} else {
-		cursor, _ = c.Find(context.Background(), bson.M{"$and": []interface{}{
-			bson.M{"breach": breachfilter},
-			bson.M{"$or": []interface{}{
-				bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
-				bson.M{"passwordhash": searchterm},
-				bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
-			}},
-		}}, opts)
-	}
-
 	// Get the page number
 	spage := r.URL.Query().Get("page")
 	// Display the first page if page is not set
@@ -142,7 +121,30 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO: Check if skipNum will overflow
 	// Check if we need to limit
 	// err = query.Skip(skipNum).Limit(limit).All(&results)
-	err = cursor.Skip(skipNum).Limit(limit).All(&results)
+	// sort and skip added as options for request
+	var cursor *mongo.Cursor
+	opts := options.Find().SetSort(bson.D{{Key: sort, Value: 1}})
+	opts.SetSkip(int64(skipNum)).SetLimit(int64(limit))
+	// TODO Remove unnessecary duplicated code here
+	//FIXME: read the output of cursor into results
+	if breachfilter == "all" {//FIXME: error handling??
+		cursor, _ = c.Find(context.Background(), bson.M{"$or": []interface{}{
+			bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
+			bson.M{"passwordhash": searchterm},
+			bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
+		}}, opts)
+	} else {
+		cursor, _ = c.Find(context.Background(), bson.M{"$and": []interface{}{
+			bson.M{"breach": breachfilter},
+			bson.M{"$or": []interface{}{
+				bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
+				bson.M{"passwordhash": searchterm},
+				bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
+			}},
+		}}, opts)
+	}
+
+	cursor.All(context.Background(), &results)//TODO: make sure this is working
 
 	if err != nil {
 		fmt.Fprintf(w, "error searching %v", err)
@@ -202,8 +204,8 @@ func ListBreaches(w http.ResponseWriter, r *http.Request) {
 	// c := mysess.DB("steamer").C("dumps")
 	c := mdb.Database("steamer").Collection("dumps")
 
-	var results []string
-	err := c.Find(nil).Distinct("breach", &results)
+	// var results []string //TODO: check if i can delete this declaration!!!!
+	results, err := c.Distinct(context.Background(), "breach", bson.M{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "breach search error: %v", err)
 		http.Error(w, "Error searching breaches", http.StatusInternalServerError)
