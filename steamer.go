@@ -74,6 +74,12 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		breachfilter = "all"
 	}
 
+	// Sort if required
+	sort := r.URL.Query().Get("sort")
+	if sort == "" {
+		sort = "all"
+	}
+
 	// Begin a search
 	// mysess := mdb.Copy() //TODO: I AM DOING THIS ATM. i dont think this is needed???
 	// c := mysess.DB("steamer").C("dumps")
@@ -83,13 +89,14 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 
 	// var query *mgo.Query
 	var cursor *mongo.Cursor
+	opts := options.Find().SetSort(bson.D{{Key: sort, Value: 1}})
 	// TODO Remove unnessecary duplicated code here
-	if breachfilter == "all" {//FIXME: this might require context!!!!!!!!!. also error handling??
+	if breachfilter == "all" {//FIXME: error handling??
 		cursor, _ = c.Find(context.Background(), bson.M{"$or": []interface{}{
 			bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
 			bson.M{"passwordhash": searchterm},
 			bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
-		}})
+		}}, opts)
 	} else {
 		cursor, _ = c.Find(context.Background(), bson.M{"$and": []interface{}{
 			bson.M{"breach": breachfilter},
@@ -98,17 +105,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 				bson.M{"passwordhash": searchterm},
 				bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
 			}},
-		}})
-	}
-
-	// Sort if required
-	sort := r.URL.Query().Get("sort")
-	if sort == "" {
-		sort = "all"
-	}
-
-	if sort != "all" {
-		cursor = cursor.Sort(sort)
+		}}, opts)
 	}
 
 	// Get the page number
