@@ -29,7 +29,7 @@ func main() {
 	// Connect to mongodb
 	ctx := context.TODO()
 	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(48 * time.Hour)
-	mdb, err := mongo.Connect(ctx, clientOptions)//TODO: check this is correct
+	mdb, err := mongo.Connect(ctx, clientOptions)
 	// mdb, err := mgo.Dial("localhost")
 	// mdb.SetSocketTimeout(48 * time.Hour)
 	// defer mdb.Close()
@@ -118,10 +118,9 @@ func main() {
 	}
 }
 
-func importSQLLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
+func importSQLLine(threader <-chan string, mgo *mongo.Client, doner chan<- bool) {
 	// create a real collection/mgo
-	mgo := mgoreal.Copy()
-	c := mgo.DB("steamer").C("dumps")
+	c := mgo.Database("steamer").Collection("dumps")
 
 	bc := 0 // insert in counts of 100
 
