@@ -12,7 +12,7 @@ import (
 	"github.com/cheggaaa/pb/v3"
 	// "gopkg.in/mgo.v2"      //outdated
 	// "gopkg.in/mgo.v2/bson" //outdated
-	"go.mongodb.org/mongo-driver/bson" //outdated
+	// "go.mongodb.org/mongo-driver/bson" //outdated
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo" //outdated
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -66,7 +66,7 @@ func MakeImporter(defaultFileName string, parser LineParser, numThreads int) (*I
 	flag.Parse()
 
 	// Connect to mongodb
-	ctx := context.TODO()
+	ctx := context.Background()
 	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(24 * time.Hour)
 	mdb, err := mongo.Connect(ctx, clientOptions)//TODO: check this is correct
 	if err != nil {
@@ -136,16 +136,19 @@ func makePbar(fileName string, parser LineParser) (*pb.ProgressBar, error) {
 }
 
 func (i *Importer) Run() {
-
+	ctx := context.Background()
 	// this part should have the threader <- r.ReadLine() loop and the <- doner loop
 	for ind := 0; ind < i.numThreads; ind++ {
-		go i.importLine()
+		go i.importLine(ctx)
 	}
 
 	// open the file
-	file, err := os.Open(i.fileName)
+	file, err := os.Open("/dumps/lifeboat.txt")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening file\r\n")
+		fmt.Println(err.Error())
+		fmt.Println(os.Getwd())
+		fmt.Println(i.fileName)
 		return
 	}
 	defer file.Close()
@@ -182,7 +185,7 @@ func (i *Importer) Run() {
 
 // Finish finishes the importing process
 func (i *Importer) Finish() {
-	i.mongo.Close()
+	i.mongo.Disconnect(context.Background())//FIXME: check this is correct
 	// finish progress bar
 	if i.bar != nil {
 		i.bar.Finish()
@@ -191,25 +194,23 @@ func (i *Importer) Finish() {
 
 // importLine calls the parser's ParseLine function to parse a line
 // and inserts it to mongodb
-func (i *Importer) importLine() {
+func (i *Importer) importLine(ctx context.Context) {
 	// create our mongodb copy
-	mgo := i.mongo.Copy()
-	c := mgo.DB("steamer").C("dumps")
+	mgo := i.mongo
+	c := mgo.Database("steamer").Collection("dumps")
 
 	bc := 0
-
-	bulk := c.Bulk()
-	bulk.Unordered()
+	var buffer []interface{}
+	opts := options.InsertMany().SetOrdered(false)
 
 	for text := range i.threader {
 		if bc > 10000 {
-			bulk.Run()
+			c.InsertMany(ctx, buffer, opts)
 			if i.bar != nil {
 				i.bar.Add(bc)
 			}
 			bc = 0
-			bulk = c.Bulk()
-			bulk.Unordered()
+			buffer = nil
 		}
 		entries, err := i.parser.ParseLine(text)
 		if err != nil {
@@ -223,13 +224,13 @@ func (i *Importer) importLine() {
 					i.bar.Increment()
 				}
 			} else {
-				bulk.Insert(entry)
+				buffer = append(buffer, entry)
 				bc += 1
 			}
 		}
 	}
 	// final run to be done
-	bulk.Run()
+	c.InsertMany(ctx, buffer, opts)
 	if i.bar != nil {
 		i.bar.Add(bc)
 	}

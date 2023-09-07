@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"github.com/fatih/structs"
 	"github.com/gorilla/mux"
-	// "gopkg.in/mgo.v2"	//outdated
-	// "gopkg.in/mgo.v2/bson"	//outdated perhaps
-	"go.mongodb.org/mongo-driver/mongo"	//outdated
-	"go.mongodb.org/mongo-driver/bson"	//outdated
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"context"
@@ -31,7 +29,7 @@ func main() {
 		fmt.Println("Could not connect to MongoDB: ", err)
 		os.Exit(1)
 	}
-	// defer mdb.Close() //TODO: close the connection at the end??
+	defer mdb.Disconnect(ctx)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", HomeHandler)

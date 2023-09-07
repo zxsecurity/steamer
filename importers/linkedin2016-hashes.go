@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"fmt"
 
-	"go.mongodb.org/mongo-driver/bson" 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo" 
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"context"
@@ -17,22 +17,19 @@ import (
 
 type LinkedinData struct {
 	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	MemberID     int           `bson:"memberid"`
-	Email        string        `bson:"email"`
-	PasswordHash string        `bson:"passwordhash"`
-	Password     string        `bson:"password"`
-	Breach       string        `bson:"breach"`
+	MemberID     int                `bson:"memberid"`
+	Email        string             `bson:"email"`
+	PasswordHash string             `bson:"passwordhash"`
+	Password     string             `bson:"password"`
+	Breach       string             `bson:"breach"`
 }
 
 func main() {
 	// Connect to mongodb
-	ctx := context.TODO()
+	ctx := context.Background()
 	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(1 * time.Hour)
-	mdb, err := mongo.Connect(ctx, clientOptions)//TODO: check this is correct
-	// defer mdb.Close()//FIXME: need to close this when done!!!!
-
-	// set timeout high to prevent timeouts (weird!)
-	// mdb.SetSocketTimeout(1 * time.Hour)
+	mdb, err := mongo.Connect(ctx, clientOptions) //TODO: check this is correct
+	defer mdb.Disconnect(ctx)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not connect to MongoDB: %v\r\n", err)
@@ -78,8 +75,6 @@ func main() {
 }
 
 func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool, ctx context.Context) {
-	// create our mongodb copy
-	// mgo := mgoreal.Copy()
 
 	c := mgoreal.Database("steamer").Collection("dumps")
 	for text := range threader {
