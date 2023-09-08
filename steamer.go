@@ -21,9 +21,9 @@ var mdb *mongo.Client
 
 func main() {
 	var err error
-	// mdb, err = mgo.Dial("localhost")
+	
 	ctx := context.Background()
-	mdb, err = mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost"))//TODO: check this is correct
+	mdb, err = mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost"))
 
 	if err != nil {
 		fmt.Println("Could not connect to MongoDB: ", err)
@@ -77,10 +77,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	if sort == "" {
 		sort = "all"
 	}
-
-	// Begin a search
-	// mysess := mdb.Copy() //TODO: I AM DOING THIS ATM. i dont think this is needed???
-	// c := mysess.DB("steamer").C("dumps")
+	
 	c := mdb.Database("steamer").Collection("dumps")
 
 	results := []BreachEntry{}
@@ -124,8 +121,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	opts := options.Find().SetSort(bson.D{{Key: sort, Value: 1}})
 	opts.SetSkip(int64(skipNum)).SetLimit(int64(limit))
 	// TODO Remove unnessecary duplicated code here
-	//FIXME: read the output of cursor into results
-	if breachfilter == "all" {//FIXME: error handling??
+	if breachfilter == "all" {
 		cursor, _ = c.Find(context.Background(), bson.M{"$or": []interface{}{
 			bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
 			bson.M{"passwordhash": searchterm},
@@ -142,7 +138,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		}}, opts)
 	}
 
-	cursor.All(context.Background(), &results)//TODO: make sure this is working
+	cursor.All(context.Background(), &results)
 
 	if err != nil {
 		fmt.Fprintf(w, "error searching %v", err)

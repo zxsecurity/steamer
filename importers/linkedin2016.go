@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson" //outdated
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo" //outdated
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"gopkg.in/mgo.v2"
+
 )
 
 type LinkedinData struct {
@@ -183,6 +183,8 @@ func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool
 		}
 
 		results := []LinkedinData{}
+		var err error
+		var cursor *mongo.Cursor
 
 		// fetch a different result based on memberid vs email
 		if strings.Index(data[0], "@") == -1 {
@@ -193,7 +195,7 @@ func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool
 				continue
 			}
 
-			cursor, err := c.Find(ctx, bson.M{"breach": "LinkedIn2016", "memberid": memberid})
+			cursor, err = c.Find(ctx, bson.M{"breach": "LinkedIn2016", "memberid": memberid})
 			cursor.All(ctx, &results)
 			if err != nil {
 				fmt.Println("error finding with memberid: ", memberid, err)
@@ -249,7 +251,7 @@ func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool
 
 		} else {
 			// email:hash format
-			cursor, err := c.Find(bson.M{"breach": "LinkedIn2016", "email": data[0]})
+			cursor, err = c.Find(ctx, bson.M{"breach": "LinkedIn2016", "email": data[0]})
 			cursor.All(ctx, &results)
 
 			if err != nil {
@@ -304,7 +306,7 @@ func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool
 					Breach:       "LinkedIn2016",
 					PasswordHash: data[1],
 				}
-				err = c.Insert(entry)
+				_, err = c.InsertOne(ctx, entry)
 				if err != nil {
 					fmt.Println("error inserting into db", err)
 					continue
