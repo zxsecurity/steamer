@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/zxsecurity/steamer/importers/util"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // TemplateLineParser test
@@ -27,6 +28,7 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	}
 	// ...change this to extract the relevant data fields to form an entry
 	entry := util.GenericData{
+		Id:       primitive.NewObjectID(),
 		Username: data[0],
 		Email:    data[1],
 		Liame:    util.Reverse(data[1]),

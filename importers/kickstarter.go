@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/zxsecurity/steamer/importers/util"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type TemplateLineParser struct{}
@@ -29,6 +30,7 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	// create our struct
 	pwdHash := data[1] + ":" + data[2] + ":f5945d1c74d3502f8a3de8562e5bf21fe3fec887"
 	entry := util.GenericData{
+		Id:           primitive.NewObjectID(),
 		Email:        data[0],
 		Liame:        util.Reverse(data[0]),
 		PasswordHash: pwdHash,

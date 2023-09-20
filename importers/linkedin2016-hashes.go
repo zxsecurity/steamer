@@ -16,7 +16,7 @@ import (
 )
 
 type LinkedinData struct {
-	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
+	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"` //need id initialized
 	MemberID     int                `bson:"memberid"`
 	Email        string             `bson:"email"`
 	PasswordHash string             `bson:"passwordhash"`
@@ -28,7 +28,7 @@ func main() {
 	// Connect to mongodb
 	ctx := context.Background()
 	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(1 * time.Hour)
-	mdb, err := mongo.Connect(ctx, clientOptions) //TODO: check this is correct
+	mdb, err := mongo.Connect(ctx, clientOptions)
 	defer mdb.Disconnect(ctx)
 
 	if err != nil {

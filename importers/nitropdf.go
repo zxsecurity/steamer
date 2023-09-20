@@ -3,7 +3,7 @@ package main
 /***
  * Format: PostgreSQL
  * Hashing Method: hashcat mode 3200 -> bcrypt
- * Hash format to crack: 
+ * Hash format to crack:
  */
 
 import (
@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/zxsecurity/steamer/importers/util"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type TemplateLineParser struct{}
@@ -38,6 +39,7 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	}
 	// extract the relevant data fields to form an entry
 	entry := util.GenericData{
+		Id:           primitive.NewObjectID(),
 		MemberID:     memberid,
 		Email:        data[5],
 		Liame:        util.Reverse(data[5]),
