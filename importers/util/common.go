@@ -10,11 +10,8 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb/v3"
-	// "gopkg.in/mgo.v2"      //outdated
-	// "gopkg.in/mgo.v2/bson" //outdated
-	// "go.mongodb.org/mongo-driver/bson" //outdated
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo" //outdated
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"context"
 )
@@ -64,15 +61,18 @@ func MakeImporter(defaultFileName string, parser LineParser, numThreads int) (*I
 	verbose := flag.Bool("v", false, "Displays progress bar")
 	fileName := *flag.String("i", defaultFileName, "Path to dump file")
 	flag.Parse()
+	//delete later
+	fmt.Println("common", fileName)
 
 	// Connect to mongodb
 	ctx := context.Background()
 	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(24 * time.Hour)
-	mdb, err := mongo.Connect(ctx, clientOptions)//TODO: check this is correct
+	mdb, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("Could not connect to MongoDB: %v\r\n", err)
 	}
-	// mdb.SetSocketTimeout(24 * time.Hour)
+	// defer mdb.Disconnect(ctx)
+	// don't defer mdb.Disconnect(ctx) here, it causes importing to not work properly?? FIXME:LATER:
 
 	// Make ProgressBar
 	var bar *pb.ProgressBar
@@ -136,14 +136,13 @@ func makePbar(fileName string, parser LineParser) (*pb.ProgressBar, error) {
 }
 
 func (i *Importer) Run() {
-	ctx := context.Background()
 	// this part should have the threader <- r.ReadLine() loop and the <- doner loop
 	for ind := 0; ind < i.numThreads; ind++ {
-		go i.importLine(ctx)
+		go i.importLine()
 	}
 
 	// open the file
-	file, err := os.Open("/dumps/lifeboat.txt")
+	file, err := os.Open(i.fileName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening file\r\n")
 		fmt.Println(err.Error())
@@ -185,7 +184,7 @@ func (i *Importer) Run() {
 
 // Finish finishes the importing process
 func (i *Importer) Finish() {
-	i.mongo.Disconnect(context.Background())//FIXME: check this is correct
+	i.mongo.Disconnect(context.Background())
 	// finish progress bar
 	if i.bar != nil {
 		i.bar.Finish()
@@ -194,9 +193,10 @@ func (i *Importer) Finish() {
 
 // importLine calls the parser's ParseLine function to parse a line
 // and inserts it to mongodb
-func (i *Importer) importLine(ctx context.Context) {
+func (i *Importer) importLine() {
 	// create our mongodb copy
 	mgo := i.mongo
+	ctx := context.Background()
 	c := mgo.Database("steamer").Collection("dumps")
 
 	bc := 0
@@ -212,7 +212,11 @@ func (i *Importer) importLine(ctx context.Context) {
 			bc = 0
 			buffer = nil
 		}
-		entries, err := i.parser.ParseLine(text)
+		entries, err := i.parser.ParseLine(text)//FIXME: messes up the indexes. calls the parseLine of the specific dump code
+		//delete later
+		fmt.Println("text", text)
+		fmt.Println("imported line", entries)
+		//
 		if err != nil {
 			fmt.Println(err)
 			continue
