@@ -61,8 +61,6 @@ func MakeImporter(defaultFileName string, parser LineParser, numThreads int) (*I
 	verbose := flag.Bool("v", false, "Displays progress bar")
 	fileName := *flag.String("i", defaultFileName, "Path to dump file")
 	flag.Parse()
-	//delete later
-	fmt.Println("common", fileName)
 
 	// Connect to mongodb
 	ctx := context.Background()
@@ -71,8 +69,7 @@ func MakeImporter(defaultFileName string, parser LineParser, numThreads int) (*I
 	if err != nil {
 		return nil, fmt.Errorf("Could not connect to MongoDB: %v\r\n", err)
 	}
-	// defer mdb.Disconnect(ctx)
-	// don't defer mdb.Disconnect(ctx) here, it causes importing to not work properly?? FIXME:LATER:
+	// don't defer mdb.Disconnect(ctx) here, it causes importing to not work properly
 
 	// Make ProgressBar
 	var bar *pb.ProgressBar
@@ -212,11 +209,8 @@ func (i *Importer) importLine() {
 			bc = 0
 			buffer = nil
 		}
-		entries, err := i.parser.ParseLine(text)//FIXME: messes up the indexes. calls the parseLine of the specific dump code
-		//delete later
-		fmt.Println("text", text)
-		fmt.Println("imported line", entries)
-		//
+		entries, err := i.parser.ParseLine(text)
+		
 		if err != nil {
 			fmt.Println(err)
 			continue

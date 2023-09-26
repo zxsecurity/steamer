@@ -12,8 +12,6 @@ type TemplateLineParser struct{}
 func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	entries := make([]interface{}, 0)
 	data := util.SplitString(line, '\t', true, true)
-	fmt.Println("data: ", data)
-	fmt.Println("string: ", line)
 	if len(data) < 3 { //changed this to 3
 		entries = append(entries, interface{}(nil))
 		return entries, nil

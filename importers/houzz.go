@@ -14,10 +14,8 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	// split a line in the text file
 	data := util.SplitString(line, '\t', true, true)
 	// check data here
-	if len(data) < 5 {
-		entries = append(entries, interface{}(nil))
-		fmt.Println("HOUZZ ENTRIES: ", entries) //this is nil WHY
-		fmt.Println("HOUZZ DATA: ", data)       //data is good, why nil after
+	if len(data) < 5 {// shouldn't stop entries with blank names from being added?
+		entries = append(entries, interface{}(nil))   
 		return entries, nil
 	}
 	// extract the relevant data fields to form an entry

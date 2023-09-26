@@ -193,9 +193,7 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 
 // Return a JSON response of all the breaches in the database
 func ListBreaches(w http.ResponseWriter, r *http.Request) {
-	// db.dumps.distinct("breaches")
-	// mysess := mdb.Copy()
-	// c := mysess.DB("steamer").C("dumps")
+	
 	c := mdb.Database("steamer").Collection("dumps")
 
 	// var results []string //TODO: check if i can delete this declaration!!!!

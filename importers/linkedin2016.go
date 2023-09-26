@@ -14,7 +14,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-
 )
 
 type LinkedinData struct {
@@ -153,6 +152,7 @@ func importSQLLine(threader <-chan string, mgo *mongo.Client, doner chan<- bool,
 		email := text[strings.Index(text, ",")+3 : strings.LastIndex(text, "'")]
 
 		entry := LinkedinData{
+			Id:       primitive.NewObjectID(),
 			MemberID: memberid,
 			Email:    email,
 			Liame:    Reverse(email),
@@ -210,7 +210,7 @@ func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool
 			if len(results) > 1 {
 				// a complex situation, but the easiest solution is to insert a new collection that matches the previous one(s)
 				entry := LinkedinData{
-					Id:		   primitive.NewObjectID(),
+					Id:           primitive.NewObjectID(),
 					MemberID:     memberid,
 					Email:        results[0].Email,
 					Liame:        Reverse(results[0].Email),
@@ -236,7 +236,7 @@ func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool
 				} else {
 					// WE have a new never seen before hash for this email!
 					entry := LinkedinData{
-						Id: 		 primitive.NewObjectID(),
+						Id:           primitive.NewObjectID(),
 						MemberID:     memberid,
 						Email:        results[0].Email,
 						Liame:        Reverse(results[0].Email),
@@ -264,7 +264,7 @@ func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool
 			if len(results) < 1 {
 				// create a new result
 				entry := LinkedinData{
-					Id: 		 primitive.NewObjectID(),
+					Id:           primitive.NewObjectID(),
 					Email:        data[0],
 					Liame:        Reverse(data[0]),
 					Breach:       "LinkedIn2016",
@@ -303,7 +303,7 @@ func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool
 				}
 				// lets just add a new result I guess and hope for the best!
 				entry := LinkedinData{
-					Id: 		 primitive.NewObjectID(),
+					Id:           primitive.NewObjectID(),
 					MemberID:     results[0].MemberID,
 					Email:        data[0],
 					Liame:        Reverse(data[0]),
