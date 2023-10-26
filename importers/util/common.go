@@ -41,7 +41,7 @@ type Importer struct {
 	numThreads int
 	threader   chan string
 	doner      chan bool
-	mongo      *mongo.Client
+	client      *mongo.Client
 	verbose    bool
 	fileName   string
 }
