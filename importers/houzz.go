@@ -14,8 +14,8 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	// split a line in the text file
 	data := util.SplitString(line, '\t', true, true)
 	// check data here
-	if len(data) < 5 {// shouldn't stop entries with blank names from being added?
-		entries = append(entries, interface{}(nil))   
+	if len(data) < 5 { // shouldn't stop entries with blank names from being added?
+		entries = append(entries, interface{}(nil))
 		return entries, nil
 	}
 	// extract the relevant data fields to form an entry
@@ -28,7 +28,6 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 		Breach:       "Houzz2019",
 	}
 	entries = append(entries, entry)
-	fmt.Println("check in houzz parse: ", entries)
 	return entries, nil
 }
 
