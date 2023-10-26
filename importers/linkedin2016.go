@@ -167,9 +167,9 @@ func importSQLLine(threader <-chan string, mgo *mongo.Client, doner chan<- bool,
 	doner <- true
 }
 
-func importLine(threader <-chan string, mgoreal *mongo.Client, doner chan<- bool, ctx context.Context) {
+func importLine(threader <-chan string, client *mongo.Client, doner chan<- bool, ctx context.Context) {
 
-	c := mgoreal.Database("steamer").Collection("dumps")
+	c := client.Database("steamer").Collection("dumps")
 	for text := range threader {
 		// Split the line into x:y
 		data := strings.Split(text, ":")
