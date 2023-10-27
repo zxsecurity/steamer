@@ -141,10 +141,7 @@ func (i *Importer) Run() {
 	// open the file
 	file, err := os.Open(i.fileName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening file\r\n")
-		fmt.Println(err.Error())
-		fmt.Println(os.Getwd())
-		fmt.Println(i.fileName)
+		fmt.Fprintf(os.Stderr, "Error opening file: %v (path: %s, file: %s)\n", err, func() string { dir, _ := os.Getwd(); return dir }(), i.fileName)
 		return
 	}
 	defer file.Close()
@@ -181,7 +178,7 @@ func (i *Importer) Run() {
 
 // Finish finishes the importing process
 func (i *Importer) Finish() {
-	i.mongo.Disconnect(context.Background())
+	i.client.Disconnect(context.Background())
 	// finish progress bar
 	if i.bar != nil {
 		i.bar.Finish()
@@ -192,7 +189,7 @@ func (i *Importer) Finish() {
 // and inserts it to mongodb
 func (i *Importer) importLine() {
 	// create our mongodb copy
-	mgo := i.mongo
+	mgo := i.client
 	ctx := context.Background()
 	c := mgo.Database("steamer").Collection("dumps")
 
