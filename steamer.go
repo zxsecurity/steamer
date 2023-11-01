@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"github.com/fatih/structs"
 	"github.com/gorilla/mux"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"context"
 	"html/template"
 	"net/http"
 	"os"
@@ -14,17 +17,19 @@ import (
 	"strconv"
 )
 
-var mdb *mgo.Session
+var mdb *mongo.Client
 
 func main() {
 	var err error
-	mdb, err = mgo.Dial("localhost")
+	
+	ctx := context.Background()
+	mdb, err = mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost"))
 
 	if err != nil {
-		fmt.Println("Could not connect ot MongoDB: ", err)
+		fmt.Println("Could not connect to MongoDB: ", err)
 		os.Exit(1)
 	}
-	defer mdb.Close()
+	defer mdb.Disconnect(ctx)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", HomeHandler)
@@ -45,7 +50,7 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type BreachEntry struct {
-	Id           bson.ObjectId `json:"id" bson:"_id,omitempty"`
+	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	MemberID     int           `bson:"memberid"`
 	Email        string        `bson:"email"`
 	PasswordHash string        `bson:"passwordhash"`
@@ -67,40 +72,15 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		breachfilter = "all"
 	}
 
-	// Begin a search
-	mysess := mdb.Copy()
-	c := mysess.DB("steamer").C("dumps")
-
-	results := []BreachEntry{}
-
-	var query *mgo.Query
-	// TODO Remove unnessecary duplicated code here
-	if breachfilter == "all" {
-		query = c.Find(bson.M{"$or": []interface{}{
-			bson.M{"email": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), ""}},
-			bson.M{"passwordhash": searchterm},
-			bson.M{"liame": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), ""}},
-		}})
-	} else {
-		query = c.Find(bson.M{"$and": []interface{}{
-			bson.M{"breach": breachfilter},
-			bson.M{"$or": []interface{}{
-				bson.M{"email": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), ""}},
-				bson.M{"passwordhash": searchterm},
-				bson.M{"liame": bson.RegEx{fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), ""}},
-			}},
-		}})
-	}
-
 	// Sort if required
 	sort := r.URL.Query().Get("sort")
 	if sort == "" {
 		sort = "all"
 	}
+	
+	c := mdb.Database("steamer").Collection("dumps")
 
-	if sort != "all" {
-		query = query.Sort(sort)
-	}
+	results := []BreachEntry{}
 
 	// Get the page number
 	spage := r.URL.Query().Get("page")
@@ -135,7 +115,30 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	skipNum := (page - 1) * limit
 	// TODO: Check if skipNum will overflow
 	// Check if we need to limit
-	err = query.Skip(skipNum).Limit(limit).All(&results)
+	// err = query.Skip(skipNum).Limit(limit).All(&results)
+	// sort and skip added as options for request
+	var cursor *mongo.Cursor
+	opts := options.Find().SetSort(bson.D{{Key: sort, Value: 1}})
+	opts.SetSkip(int64(skipNum)).SetLimit(int64(limit))
+	// TODO Remove unnessecary duplicated code here
+	if breachfilter == "all" {
+		cursor, _ = c.Find(context.Background(), bson.M{"$or": []interface{}{
+			bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
+			bson.M{"passwordhash": searchterm},
+			bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
+		}}, opts)
+	} else {
+		cursor, _ = c.Find(context.Background(), bson.M{"$and": []interface{}{
+			bson.M{"breach": breachfilter},
+			bson.M{"$or": []interface{}{
+				bson.M{"email": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(searchterm)), Options: ""}},
+				bson.M{"passwordhash": searchterm},
+				bson.M{"liame": primitive.Regex{Pattern: fmt.Sprintf("^%v.*", regexp.QuoteMeta(Reverse(searchterm))), Options: ""}},
+			}},
+		}}, opts)
+	}
+
+	cursor.All(context.Background(), &results)
 
 	if err != nil {
 		fmt.Fprintf(w, "error searching %v", err)
@@ -190,12 +193,11 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 
 // Return a JSON response of all the breaches in the database
 func ListBreaches(w http.ResponseWriter, r *http.Request) {
-	// db.dumps.distinct("breaches")
-	mysess := mdb.Copy()
-	c := mysess.DB("steamer").C("dumps")
+	
+	c := mdb.Database("steamer").Collection("dumps")
 
-	var results []string
-	err := c.Find(nil).Distinct("breach", &results)
+	// var results []string //TODO: check if i can delete this declaration!!!!
+	results, err := c.Distinct(context.Background(), "breach", bson.M{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "breach search error: %v", err)
 		http.Error(w, "Error searching breaches", http.StatusInternalServerError)

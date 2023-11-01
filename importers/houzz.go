@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/zxsecurity/steamer/importers/util"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type TemplateLineParser struct{}
@@ -13,12 +14,13 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	// split a line in the text file
 	data := util.SplitString(line, '\t', true, true)
 	// check data here
-	if len(data) < 5 {
+	if len(data) < 5 { // shouldn't stop entries with blank names from being added?
 		entries = append(entries, interface{}(nil))
 		return entries, nil
 	}
 	// extract the relevant data fields to form an entry
 	entry := util.GenericData{
+		Id:           primitive.NewObjectID(),
 		Email:        data[4],
 		Liame:        util.Reverse(data[4]),
 		PasswordHash: data[3],

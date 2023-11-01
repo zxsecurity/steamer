@@ -2,31 +2,36 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type LinkedinData struct {
-	Id           bson.ObjectId `json:"id" bson:"_id,omitempty"`
-	MemberID     int           `bson:"memberid"`
-	Email        string        `bson:"email"`
-	Liame        string        `bson:"liame"`
-	PasswordHash string        `bson:"passwordhash"`
-	Password     string        `bson:"password"`
-	Breach       string        `bson:"breach"`
+	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
+	MemberID     int                `bson:"memberid"`
+	Email        string             `bson:"email"`
+	Liame        string             `bson:"liame"`
+	PasswordHash string             `bson:"passwordhash"`
+	Password     string             `bson:"password"`
+	Breach       string             `bson:"breach"`
 }
 
 func main() {
 	// Connect to mongodb
-	mdb, err := mgo.Dial("localhost")
-	mdb.SetSocketTimeout(48 * time.Hour)
-	defer mdb.Close()
+	ctx := context.Background()
+	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(48 * time.Hour)
+	mdb, err := mongo.Connect(ctx, clientOptions)
+	defer mdb.Disconnect(ctx)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not connect to MongoDB: %v\r\n", err)
@@ -38,7 +43,7 @@ func main() {
 	sqldoner := make(chan bool, threads)
 
 	for i := 0; i < threads; i++ {
-		go importSQLLine(sqlthreader, mdb, sqldoner)
+		go importSQLLine(sqlthreader, mdb, sqldoner, ctx)
 	}
 
 	fmt.Println("Importing SQL")
@@ -75,7 +80,7 @@ func main() {
 	doner := make(chan bool, threads)
 
 	for i := 0; i < threads; i++ {
-		go importLine(threader, mdb, doner)
+		go importLine(threader, mdb, doner, ctx)
 	}
 
 	for _, f := range matches {
@@ -112,22 +117,19 @@ func main() {
 	}
 }
 
-func importSQLLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
+func importSQLLine(threader <-chan string, mgo *mongo.Client, doner chan<- bool, ctx context.Context) {
 	// create a real collection/mgo
-	mgo := mgoreal.Copy()
-	c := mgo.DB("steamer").C("dumps")
-
+	c := mgo.Database("steamer").Collection("dumps")
 	bc := 0 // insert in counts of 100
 
-	bulk := c.Bulk()
-	bulk.Unordered()
+	var buffer []interface{}
+	opts := options.InsertMany().SetOrdered(false)
 
 	for text := range threader {
 		if bc > 1000 {
 			bc = 0
-			bulk.Run()
-			bulk = c.Bulk()
-			bulk.Unordered()
+			c.InsertMany(ctx, buffer, opts)
+			buffer = nil
 		}
 		bc += 1
 		// Check that these will be valid
@@ -150,25 +152,24 @@ func importSQLLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bo
 		email := text[strings.Index(text, ",")+3 : strings.LastIndex(text, "'")]
 
 		entry := LinkedinData{
+			Id:       primitive.NewObjectID(),
 			MemberID: memberid,
 			Email:    email,
 			Liame:    Reverse(email),
 			Breach:   "LinkedIn2016",
 		}
 		// Insert into database
-		bulk.Insert(entry)
+		buffer = append(buffer, entry)
 	}
 	// final bulk insert
-	bulk.Run()
+	c.InsertMany(ctx, buffer, opts)
 
 	doner <- true
 }
 
-func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
-	// create our mongodb copy
-	mgo := mgoreal.Copy()
+func importLine(threader <-chan string, client *mongo.Client, doner chan<- bool, ctx context.Context) {
 
-	c := mgo.DB("steamer").C("dumps")
+	c := client.Database("steamer").Collection("dumps")
 	for text := range threader {
 		// Split the line into x:y
 		data := strings.Split(text, ":")
@@ -183,6 +184,7 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 
 		results := []LinkedinData{}
 		var err error
+		var cursor *mongo.Cursor
 
 		// fetch a different result based on memberid vs email
 		if strings.Index(data[0], "@") == -1 {
@@ -193,7 +195,8 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 				continue
 			}
 
-			err = c.Find(bson.M{"breach": "LinkedIn2016", "memberid": memberid}).All(&results)
+			cursor, err = c.Find(ctx, bson.M{"breach": "LinkedIn2016", "memberid": memberid})
+			cursor.All(ctx, &results)
 			if err != nil {
 				fmt.Println("error finding with memberid: ", memberid, err)
 				continue
@@ -207,13 +210,14 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 			if len(results) > 1 {
 				// a complex situation, but the easiest solution is to insert a new collection that matches the previous one(s)
 				entry := LinkedinData{
+					Id:           primitive.NewObjectID(),
 					MemberID:     memberid,
 					Email:        results[0].Email,
 					Liame:        Reverse(results[0].Email),
 					Breach:       "LinkedIn2016",
 					PasswordHash: data[1],
 				}
-				err = c.Insert(entry)
+				_, err = c.InsertOne(ctx, entry)
 				if err != nil {
 					fmt.Println("error inserting into db", err)
 					continue
@@ -228,17 +232,18 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 
 				if results[0].PasswordHash == "" {
 					// Update the record with the real password hash
-					c.Update(bson.M{"_id": results[0].Id}, bson.M{"$set": bson.M{"passwordhash": data[1]}})
+					c.UpdateOne(ctx, bson.M{"_id": results[0].Id}, bson.M{"$set": bson.M{"passwordhash": data[1]}})
 				} else {
 					// WE have a new never seen before hash for this email!
 					entry := LinkedinData{
+						Id:           primitive.NewObjectID(),
 						MemberID:     memberid,
 						Email:        results[0].Email,
 						Liame:        Reverse(results[0].Email),
 						Breach:       "LinkedIn2016",
 						PasswordHash: data[1],
 					}
-					err = c.Insert(entry)
+					_, err = c.InsertOne(ctx, entry)
 					if err != nil {
 						fmt.Println("error inserting into db", err)
 						continue
@@ -248,7 +253,8 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 
 		} else {
 			// email:hash format
-			err = c.Find(bson.M{"breach": "LinkedIn2016", "email": data[0]}).All(&results)
+			cursor, err = c.Find(ctx, bson.M{"breach": "LinkedIn2016", "email": data[0]})
+			cursor.All(ctx, &results)
 
 			if err != nil {
 				fmt.Println("error finding with memberid: ", data[0], err)
@@ -258,12 +264,13 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 			if len(results) < 1 {
 				// create a new result
 				entry := LinkedinData{
+					Id:           primitive.NewObjectID(),
 					Email:        data[0],
 					Liame:        Reverse(data[0]),
 					Breach:       "LinkedIn2016",
 					PasswordHash: data[1],
 				}
-				err = c.Insert(entry)
+				_, err = c.InsertOne(ctx, entry)
 				if err != nil {
 					fmt.Println("error inserting into db", err)
 					continue
@@ -276,7 +283,7 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 					continue
 				}
 				// update the entry
-				err := c.Update(bson.M{"_id": results[0].Id}, bson.M{"$set": bson.M{"passwordhash": data[1]}})
+				_, err := c.UpdateOne(ctx, bson.M{"_id": results[0].Id}, bson.M{"$set": bson.M{"passwordhash": data[1]}})
 				if err != nil {
 					fmt.Println("error inserting into db", err)
 					continue
@@ -296,13 +303,14 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 				}
 				// lets just add a new result I guess and hope for the best!
 				entry := LinkedinData{
+					Id:           primitive.NewObjectID(),
 					MemberID:     results[0].MemberID,
 					Email:        data[0],
 					Liame:        Reverse(data[0]),
 					Breach:       "LinkedIn2016",
 					PasswordHash: data[1],
 				}
-				err = c.Insert(entry)
+				_, err = c.InsertOne(ctx, entry)
 				if err != nil {
 					fmt.Println("error inserting into db", err)
 					continue

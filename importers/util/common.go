@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb/v3"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"context"
 )
 
 type GenericData struct {
-	Id           bson.ObjectId `json:"id" bson:"_id,omitempty"`
+	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	MemberID     int           `bson:"memberid"`
 	Email        string        `bson:"email"`
 	Liame        string        `bson:"liame"`
@@ -39,7 +41,7 @@ type Importer struct {
 	numThreads int
 	threader   chan string
 	doner      chan bool
-	mongo      *mgo.Session
+	client      *mongo.Client
 	verbose    bool
 	fileName   string
 }
@@ -61,11 +63,13 @@ func MakeImporter(defaultFileName string, parser LineParser, numThreads int) (*I
 	flag.Parse()
 
 	// Connect to mongodb
-	mdb, err := mgo.Dial("localhost")
+	ctx := context.Background()
+	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(24 * time.Hour)
+	mdb, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("Could not connect to MongoDB: %v\r\n", err)
 	}
-	mdb.SetSocketTimeout(24 * time.Hour)
+	// don't defer mdb.Disconnect(ctx) here, it causes importing to not work properly
 
 	// Make ProgressBar
 	var bar *pb.ProgressBar
@@ -129,7 +133,6 @@ func makePbar(fileName string, parser LineParser) (*pb.ProgressBar, error) {
 }
 
 func (i *Importer) Run() {
-
 	// this part should have the threader <- r.ReadLine() loop and the <- doner loop
 	for ind := 0; ind < i.numThreads; ind++ {
 		go i.importLine()
@@ -138,7 +141,7 @@ func (i *Importer) Run() {
 	// open the file
 	file, err := os.Open(i.fileName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening file\r\n")
+		fmt.Fprintf(os.Stderr, "Error opening file: %v (path: %s, file: %s)\n", err, func() string { dir, _ := os.Getwd(); return dir }(), i.fileName)
 		return
 	}
 	defer file.Close()
@@ -175,7 +178,7 @@ func (i *Importer) Run() {
 
 // Finish finishes the importing process
 func (i *Importer) Finish() {
-	i.mongo.Close()
+	i.client.Disconnect(context.Background())
 	// finish progress bar
 	if i.bar != nil {
 		i.bar.Finish()
@@ -186,25 +189,25 @@ func (i *Importer) Finish() {
 // and inserts it to mongodb
 func (i *Importer) importLine() {
 	// create our mongodb copy
-	mgo := i.mongo.Copy()
-	c := mgo.DB("steamer").C("dumps")
+	mgo := i.client
+	ctx := context.Background()
+	c := mgo.Database("steamer").Collection("dumps")
 
 	bc := 0
-
-	bulk := c.Bulk()
-	bulk.Unordered()
+	var buffer []interface{}
+	opts := options.InsertMany().SetOrdered(false)
 
 	for text := range i.threader {
 		if bc > 10000 {
-			bulk.Run()
+			c.InsertMany(ctx, buffer, opts)
 			if i.bar != nil {
 				i.bar.Add(bc)
 			}
 			bc = 0
-			bulk = c.Bulk()
-			bulk.Unordered()
+			buffer = nil
 		}
 		entries, err := i.parser.ParseLine(text)
+		
 		if err != nil {
 			fmt.Println(err)
 			continue
@@ -216,13 +219,13 @@ func (i *Importer) importLine() {
 					i.bar.Increment()
 				}
 			} else {
-				bulk.Insert(entry)
+				buffer = append(buffer, entry)
 				bc += 1
 			}
 		}
 	}
 	// final run to be done
-	bulk.Run()
+	c.InsertMany(ctx, buffer, opts)
 	if i.bar != nil {
 		i.bar.Add(bc)
 	}

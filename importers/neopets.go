@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/zxsecurity/steamer/importers/util"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -38,6 +39,7 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 	}
 	// extract the relevant data fields to form an entry
 	entry := NeopetsData{
+		Id:        primitive.NewObjectID(),
 		Username:  data[0],
 		Password:  data[1],
 		Email:     data[2],

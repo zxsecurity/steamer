@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/zxsecurity/steamer/importers/util"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type TemplateLineParser struct{}
@@ -60,6 +61,7 @@ func (t TemplateLineParser) ParseLine(line string) ([]interface{}, error) {
 			// strip any remaining quotes
 			data[2] = strings.ReplaceAll(data[2], "'", "")
 			entry = util.GenericData{
+				Id:           primitive.NewObjectID(),
 				MemberID:     memberid,
 				Email:        data[2],
 				Liame:        util.Reverse(data[2]),

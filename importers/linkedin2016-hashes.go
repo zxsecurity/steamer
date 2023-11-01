@@ -3,29 +3,33 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"context"
 	"os"
 	"strings"
 	"time"
 )
 
 type LinkedinData struct {
-	Id           bson.ObjectId `json:"id" bson:"_id,omitempty"`
-	MemberID     int           `bson:"memberid"`
-	Email        string        `bson:"email"`
-	PasswordHash string        `bson:"passwordhash"`
-	Password     string        `bson:"password"`
-	Breach       string        `bson:"breach"`
+	Id           primitive.ObjectID `json:"id" bson:"_id,omitempty"` //need id initialized
+	MemberID     int                `bson:"memberid"`
+	Email        string             `bson:"email"`
+	PasswordHash string             `bson:"passwordhash"`
+	Password     string             `bson:"password"`
+	Breach       string             `bson:"breach"`
 }
 
 func main() {
 	// Connect to mongodb
-	mdb, err := mgo.Dial("localhost")
-	defer mdb.Close()
-
-	// set timeout high to prevent timeouts (weird!)
-	mdb.SetSocketTimeout(1 * time.Hour)
+	ctx := context.Background()
+	clientOptions := options.Client().ApplyURI("mongodb://localhost").SetTimeout(1 * time.Hour)
+	mdb, err := mongo.Connect(ctx, clientOptions)
+	defer mdb.Disconnect(ctx)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not connect to MongoDB: %v\r\n", err)
@@ -37,7 +41,7 @@ func main() {
 	doner := make(chan bool, threads)
 
 	for i := 0; i < threads; i++ {
-		go importLine(threader, mdb, doner)
+		go importLine(threader, mdb, doner, ctx)
 	}
 
 	// open the file
@@ -70,11 +74,9 @@ func main() {
 	}
 }
 
-func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool) {
-	// create our mongodb copy
-	mgo := mgoreal.Copy()
+func importLine(threader <-chan string, client *mongo.Client, doner chan<- bool, ctx context.Context) {
 
-	c := mgo.DB("steamer").C("dumps")
+	c := client.Database("steamer").Collection("dumps")
 	for text := range threader {
 		// Split the line into x:y
 		data := strings.SplitN(text, ":", 2)
@@ -85,7 +87,7 @@ func importLine(threader <-chan string, mgoreal *mgo.Session, doner chan<- bool)
 		}
 
 		// update any relevant results in place
-		_, err := c.UpdateAll(bson.M{"breach": "LinkedIn2016", "passwordhash": data[0]},
+		_, err := c.UpdateMany(ctx, bson.M{"breach": "LinkedIn2016", "passwordhash": data[0]},
 			bson.M{"$set": bson.M{"password": data[1]}})
 		if err != nil {
 			fmt.Printf("error updating row %v %v %v\r\n", data[0], data[1], err)
